@@ -128,7 +128,7 @@ def report_html(collection, events, analysis):
     by_id = {r["id"]: r for r in events}
     title = e(analysis["title"])
     html = [f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{REPORT_CSS}</style></head><body><main>',
-            f'<header><p class="eyebrow">SESSION REVIEWER / VENN DESIGN</p><h1>{title}</h1><p>{e(analysis["interpretation"]["summary"])}</p><a href="player.html">Open standalone session player</a></header>',
+            f'<header><p class="eyebrow">AGENT SESSION INSIGHTS / VENN DESIGN</p><h1>{title}</h1><p>{e(analysis["interpretation"]["summary"])}</p><a href="player.html">Open standalone session player</a></header>',
             '<nav aria-label="Report contents">' + "".join(f'<a href="#{key}">{label}</a>' for key, label in [
                 ("coverage", "Coverage"), ("usage", "Usage"), ("time", "Activity"), ("directions", "Human direction"),
                 ("playback", "Replay"), ("limits", "Limits"), ("record", "Conversation"), ("sources", "Sources")]) + "</nav>",

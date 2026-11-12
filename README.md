@@ -1,4 +1,4 @@
-# Session Reviewer
+# Agent Session Insights
 
 A local-first reviewer agent and reproducible analysis pipeline for Copilot CLI,
 Claude Code, Codex, Cursor exports, and Replit conversation exports. Reports and
@@ -22,10 +22,12 @@ not run the player inside the README.
 
 ## Run this exact session
 
-From the **repository root** (`sessionreviewer/` in the original workspace),
-using Python 3.12 or later:
+Clone the repository, then run the bundled example with Python 3.12 or later:
 
 ```bash
+git clone https://github.com/markrussinovich/agent-session-insights.git
+cd agent-session-insights
+
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
@@ -35,6 +37,10 @@ python review.py run \
   --manifest examples/creation.json \
   --output tmp/creation-review
 ```
+
+For an existing checkout (`sessionreviewer/` in the original workspace), skip the
+clone and `cd` commands and run from that repository root. Private-repository
+access requires GitHub authentication.
 
 Open **`tmp/creation-review/report.html`** for the report with embedded playback,
 **`tmp/creation-review/report.pdf`** for the regenerated paper, or
@@ -89,7 +95,7 @@ snapshots under the ignored `tmp/` output directory.
 
 ## Agent, skills, and prompts
 
-The agent profile is `.github/agents/session-reviewer.agent.md`, with three
+The agent profile is `.github/agents/agent-session-insights.agent.md`, with three
 repository skills under `.github/skills/`: collect, analyze, and publish.
 Open this directory as the agent workspace, or copy its `.github` definitions
 into the destination repository. `prompts/review.md` is the reusable task prompt.
