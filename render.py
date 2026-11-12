@@ -1,5 +1,6 @@
 """Venn-style offline reports, standalone playback, PDF, and browser validation."""
 from datetime import datetime, timedelta
+from decimal import Decimal
 from html import escape
 import hashlib
 import json
@@ -278,7 +279,8 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 if total["estimated_usd"] is None:
                     assert shown == ("Unpriced" if total["calls"] else "No recorded usage"), (scope, shown)
                 else:
-                    assert abs(float(shown.split()[0].removeprefix("$").replace(",", "")) - total["estimated_usd"]) <= 0.0000005
+                    displayed = Decimal(shown.split()[0].removeprefix("$").replace(",", ""))
+                    assert abs(displayed - Decimal(str(total["estimated_usd"]))) <= Decimal("0.0000005")
                     assert ("+ unpriced calls" in shown) == bool(total["unpriced_calls"])
                 if total["calls"]:
                     assert page.locator(f"#{scope}-tokens").inner_text() == (
@@ -299,7 +301,8 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 if turn["calls"]:
                     assert f'{turn["input"]:,} in · {turn["output"]:,} out' in row["usage"]
                 if turn["estimated_usd"] is not None:
-                    assert abs(float(re.search(r"\$([\d,.]+)", row["usage"])[1].replace(",", "")) - turn["estimated_usd"]) <= 0.0000005
+                    displayed = Decimal(re.search(r"\$([\d,.]+)", row["usage"])[1].replace(",", ""))
+                    assert abs(displayed - Decimal(str(turn["estimated_usd"]))) <= Decimal("0.0000005")
                 else:
                     assert ("Unpriced" if turn["calls"] else "No recorded usage") in row["usage"]
         for row in sorted(data["humans"] + data["updates"], key=lambda r: (r["t"], r["order"])):

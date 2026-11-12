@@ -1,21 +1,21 @@
 {
-  "title": "Creating the session-analysis report and player",
+  "title": "Building Agent Session Insights: player, reviewer, and repository",
   "timezone": "America/Los_Angeles",
   "annotations": "creation-annotations.json",
   "pricing": "pricing-rates.json",
   "missing_harnesses": {
-    "copilot": "Not part of this selected Codex interaction.",
-    "claude": "Not part of this selected Codex interaction.",
+    "claude": "No source supplied; not part of this selected Copilot CLI interaction.",
+    "codex": "Historical Codex logs were development inputs, not this example's conversation.",
     "cursor": "No export supplied; not part of this selected interaction.",
     "replit": "No export supplied; not part of this selected interaction."
   },
   "sources": [
     {
-      "harness": "codex",
+      "harness": "copilot",
       "path": "creation-session.jsonl",
-      "session": "01a1b477-0216-74e2-b942-5a488239fb02",
-      "start": "2026-11-07T17:06:22.196Z",
-      "end": "2026-11-07T19:35:52.333Z"
+      "session": "53fca206-b87f-4fad-bd90-f09c26d61fac",
+      "start": "2026-11-12T16:45:47.965Z",
+      "end": "2026-11-12T20:06:03.385Z"
     }
   ]
 }

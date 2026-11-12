@@ -1,28 +1,33 @@
 {
-  "description": "Scoped, redacted Codex-format export of the session that created the original session-analysis report and player.",
-  "session": "01a1b477-0216-74e2-b942-5a488239fb02",
-  "start": "2026-11-07T17:06:22.196Z",
-  "end": "2026-11-07T19:35:52.333Z",
-  "original_snapshot_sha256": "b2978ddb3cc7fe4137c049f413b885a5d9ddffdbcceb7eb26fe6822b8e37ea10",
+  "description": "Scoped, redacted Copilot CLI-format export of this conversation's Agent Session Insights player, reviewer and repository-building work.",
+  "session": "53fca206-b87f-4fad-bd90-f09c26d61fac",
+  "start": "2026-11-12T16:45:47.965Z",
+  "end": "2026-11-12T20:06:03.385Z",
+  "original_snapshot_sha256": "40e877d1819b81a72f8f08ed6340da9242d093f9c4d425ff5e645037cdbb34c8",
   "export": "creation-session.jsonl",
-  "method": "Reconstructed from the verified normalized evidence. Preserves redacted human/assistant text, timestamps, message/request/turn identities, tool-call names and authoritative per-request usage. Model-context records retain the recorded model identities.",
+  "method": "Reconstructed from a locally frozen copy of this Copilot CLI session's events.jsonl. Preserves selected visible text, genuine ask_user form answers, timestamps, message identities, tool-call names and authoritative per-request usage. Request IDs are consistently SHA-256 pseudonymized instead of publishing opaque provider call IDs. Original Copilot interaction IDs link requests to typed prompts through matching assistant API-call metadata; form answers are preserved separately and do not invent metered calls. Each exported record retains its original source line.",
+  "human_inputs_detail": {
+    "typed_prompts": 12,
+    "form_answers": 3
+  },
   "omitted": [
-    "Events outside the selected interval",
+    "Earlier prompt-recovery work and later GitHub Pages discussion outside the selected interval",
     "System context and internal reasoning",
     "Tool arguments and results",
-    "Cumulative/mirrored accounting records and unused native metadata",
+    "Cumulative/mirrored accounting records, memory injections and unused native metadata",
+    "Encrypted content, opaque provider call IDs and raw model-context snapshots",
     "External shared-session URLs, replaced with [REDACTED_SHARED_SESSION_URL]"
   ],
   "expected": {
-    "human_inputs": 22,
-    "assistant_messages": 58,
-    "tool_calls": 154,
-    "metered_requests": 176,
-    "input_tokens": 41281530,
-    "output_tokens": 179475,
-    "cache_read_tokens": 40140800,
-    "cache_write_tokens": 0,
-    "estimated_api_equivalent_usd": 12.5873614
+    "human_inputs": 15,
+    "assistant_messages": 21,
+    "tool_calls": 216,
+    "metered_requests": 120,
+    "input_tokens": 18500781,
+    "output_tokens": 166272,
+    "cache_read_tokens": 17603808,
+    "cache_write_tokens": 896613,
+    "estimated_api_equivalent_usd": 5.6653533
   },
   "privacy": "Credential redaction is best effort. External shared-session URLs are redacted so this reviewed example does not disclose another conversation. The owner approved this selected conversation for public publication; other logs still require review before sharing. The full original history is not included."
 }

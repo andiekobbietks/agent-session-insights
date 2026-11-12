@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sources import epoch, parse, redact, timestamp
 from review import analyze, annotations, collect
-from render import payload, player_html, public_pdf_links, report_html
+from render import payload, player_html, public_pdf_links, publish, report_html
 from scripts.prepare_pages import PUBLIC_FILES, prepare
 
 TIME = "2026-11-07T17:06:22.211Z"
@@ -117,6 +117,30 @@ class SourceTests(unittest.TestCase):
         events = self.load("copilot", records)
         self.assertEqual([e["kind"] for e in events], ["user", "usage"])
         self.assertEqual(events[1]["input"], 100)
+
+    def test_copilot_form_answers_and_recorded_request_links_exclude_reasoning(self):
+        events = self.load("copilot", [
+            {"type": "user.message", "id": "human", "timestamp": TIME,
+             "data": {"content": "Build the player", "interactionId": "interaction"}},
+            {"type": "session.usage_record", "id": "usage", "timestamp": TIME,
+             "data": {"usage": {"apiCallId": "request", "model": "m",
+                               "inputTokens": 100, "outputTokens": 10, "cacheWriteTokens": 90}}},
+            {"type": "assistant.message", "id": "tool-only", "timestamp": TIME,
+             "data": {"apiCallId": "request", "interactionId": "interaction", "content": ""}},
+            {"type": "human_response.recorded", "id": "answer", "timestamp": TIME,
+             "data": {"actor": "human_response", "response": {
+                 "responseKind": "ask_user", "content": {"framework": "Venn"}}}},
+            {"type": "assistant.message", "id": "reasoning", "timestamp": TIME,
+             "data": {"phase": "analysis", "content": "Not visible session text"}},
+            {"type": "human_response.recorded", "id": "synthetic", "timestamp": TIME,
+             "data": {"actor": "agent", "response": {
+                 "responseKind": "ask_user", "content": {"framework": "Not a human answer"}}}},
+        ])
+        self.assertEqual([event["kind"] for event in events], ["user", "usage", "user"])
+        self.assertEqual(events[0]["turn_id"], events[1]["turn_id"])
+        self.assertEqual(events[1]["cache_write"], 90)
+        self.assertEqual(json.loads(events[2]["text"]), {"framework": "Venn"})
+        self.assertTrue(events[2]["form_response"])
 
     def test_claude_queued_humans_usage_blocks_and_handbacks(self):
         records = [
@@ -264,6 +288,15 @@ class SourceTests(unittest.TestCase):
                 self.assertAlmostEqual(analysis["accounting"]["total"]["estimated_usd"], value, places=7)
             else:
                 self.assertEqual(analysis[field], value, field)
+        self.assertTrue(all(event["harness"] == "copilot" for event in events))
+        self.assertEqual(sum(event.get("form_response", False) for event in events), 3)
+        self.assertIn("create a subdirectory, sessionreviewer", events[0]["text"])
+        output = self.root / "example-review"
+        (output / "analysis.json").write_text(json.dumps(analysis))
+        publish(output, collection, events, analysis, "https://example.org/session/")
+        verification = json.loads((output / "verification.json").read_text())
+        self.assertEqual(verification["status"], "passed")
+        self.assertEqual(verification["pdf_link_base_url"], "https://example.org/session/")
 
 
 if __name__ == "__main__":

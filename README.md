@@ -9,8 +9,9 @@ theme itself is not generated anew for each session.
 ## Example paper and embedded replay
 
 This repository includes a generated **project meta-report**: a report about the
-specific session that created the original session-analysis report and player.
-It is not the original cross-harness study.
+**Copilot CLI conversation that built this project's reviewer, player and Git
+repository**. It is not the earlier Codex conversation or original cross-harness
+study used as development input.
 
 - **Live demo:** [HTML report with embedded replay](https://markrussinovich.github.io/agent-session-insights/),
   [standalone player](https://markrussinovich.github.io/agent-session-insights/player.html),
@@ -60,22 +61,35 @@ The manifest uses only repository-local files:
 
 | Input | Purpose |
 | --- | --- |
-| [`examples/creation-session.jsonl`](examples/creation-session.jsonl) | Scoped, redacted Codex-format session export |
+| [`examples/creation-session.jsonl`](examples/creation-session.jsonl) | Scoped, redacted Copilot CLI-format export of this project's creation |
 | [`examples/creation-source.json`](examples/creation-source.json) | Original source hash, scope, export method and expected results |
-| [`examples/creation-annotations.json`](examples/creation-annotations.json) | Nine evidence-linked material directions; all prompts remain in replay |
+| [`examples/creation-annotations.json`](examples/creation-annotations.json) | Eleven evidence-linked material directions; all selected inputs remain in replay |
 | [`examples/pricing-rates.json`](examples/pricing-rates.json) | Frozen historical, cache-aware API-equivalent pricing |
 
-The example is session **`01a1b477-0216-74e2-b942-5a488239fb02`**, scoped inclusively
-to **2026-11-07 17:06:22.196–19:35:52.333 UTC**. Expect **22 user prompts,
-58 assistant messages, 154 tool-call names, and 176 metered requests**, all using
-`gpt-6.1-sol`: **41,281,530 inclusive input tokens**, **179,475 output tokens**,
-and **$12.5873614 estimated API-equivalent cost**. This is not an actual bill or
-newly verified pricing.
+The example is this **GitHub Copilot CLI** session,
+**`53fca206-b87f-4fad-bd90-f09c26d61fac`**, scoped inclusively to
+**2026-11-12 16:45:47.965–20:06:03.385 UTC**: from the `sessionreviewer` request
+through the private GitHub push. Earlier prompt recovery and later Pages setup
+are excluded.
+
+Expect **15 human inputs (12 typed prompts and 3 form answers), 21 assistant
+messages, 216 tool-call names, and 120 metered requests**, all using
+`gpt-6.1-sol`: **18,500,781 inclusive input tokens**, **166,272 output tokens**,
+**17,603,808 cached-read tokens**, **896,613 cache-write tokens**, and
+**$5.6653533 estimated API-equivalent cost** using the bundled historical rates.
+This is not an actual Copilot bill or newly verified pricing.
+
+Historical replies discussing 22 prompts, 176 requests or $12.587361 refer to
+the earlier Codex fixture used to develop the player, not the metrics of this
+Copilot example. The report makes that distinction explicit.
 
 The export is reconstructed from verified normalized evidence, not a byte-for-byte
-copy of the full original history. It preserves the selected message text after
+copy of the full original history. It preserves the selected message text and
+genuine human form answers after
 best-effort credential and shared-session URL redaction, timestamps, identities, tool-call names and
-per-request accounting; it excludes unrelated history, system context, internal
+per-request accounting. Opaque provider request identifiers are consistently
+SHA-256 pseudonymized; recorded interaction IDs preserve prompt ownership.
+It excludes unrelated history, system context, internal
 reasoning, tool payloads and cumulative mirrors. No original workspace files are
 required to rebuild the example.
 
