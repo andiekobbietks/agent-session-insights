@@ -44,6 +44,18 @@ python review.py run \
   --output tmp/creation-review
 ```
 
+On Windows PowerShell, run these commands from the repository root. This uses
+the virtual environment directly, so activation is not required:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
+.\.venv\Scripts\python.exe review.py run `
+  --manifest examples/creation.json `
+  --output tmp/creation-review
+```
+
 For an existing checkout (`sessionreviewer/` in the original workspace), skip the
 clone and `cd` commands and run from that repository root. Private-repository
 access requires GitHub authentication.
@@ -93,8 +105,10 @@ Outputs: `report.html`, `report.pdf`, `player.html`, `analysis.json`,
 `events.jsonl`, `collection.json`, `verification.json`, an optional frozen
 `pricing.json`, and private raw snapshots.
 Open `report.html` or `player.html` directly; neither requires a server.
-The output directory is private (0700); files are 0600. It contains conversation
-text and must be reviewed before sharing. Secret redaction is best effort.
+On POSIX, the output directory is restricted to 0700 and files to 0600. On
+Windows, Python's `chmod` does not set NTFS ACLs, so output inherits the parent
+directory's ACL. The output contains conversation text and must be reviewed
+before sharing. Secret redaction is best effort.
 The checked-in example contains conversation text too. Full raw histories and
 runtime `private/` snapshots are not versioned; fresh runs recreate private
 snapshots under the ignored `tmp/` output directory.

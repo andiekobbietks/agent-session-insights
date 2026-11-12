@@ -54,7 +54,7 @@ class PlayerTests(unittest.TestCase):
         analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
         data = payload(events, analysis)
         path = Path(self.directory.name) / "player.html"
-        path.write_text(player_html(data))
+        path.write_text(player_html(data), encoding="utf-8")
         self.page.goto(path.as_uri(), wait_until="networkidle")
         return data
 

@@ -109,14 +109,14 @@ def payload(events, analysis):
 
 
 def player_html(data):
-    html = (ASSETS / "player.html").read_text()
+    html = (ASSETS / "player.html").read_text(encoding="utf-8")
     substitutions = {
         "{{TITLE}}": escape(data["meta"]["title"]), "{{TIMEZONE}}": escape(data["meta"]["timezone"]),
         "{{RANGE}}": "selected interaction", "{{HUMANS}}": str(len(data["humans"])),
         "{{RESPONSES}}": str(len(data["updates"])), "{{CALLS}}": str(len(data["usage"])),
         "{{UNDATED}}": str(len(data["undated"])), "{{UNDATED_HIDDEN}}": "" if data["undated"] else "hidden",
-        "/* STYLE */": (ASSETS / "player.css").read_text(),
-        "/* SCRIPT */": (ASSETS / "player.js").read_text(),
+        "/* STYLE */": (ASSETS / "player.css").read_text(encoding="utf-8"),
+        "/* SCRIPT */": (ASSETS / "player.js").read_text(encoding="utf-8"),
     }
     for old, new in substitutions.items():
         html = html.replace(old, new)

@@ -194,7 +194,8 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(collection["sources"][0]["outside_interval"], 1)
         self.assertEqual((self.root / "output" / "pricing.json").read_bytes(), pricing_path.read_bytes())
         self.assertEqual(collection["pricing"]["card"]["verified_on"], "2026-11-07")
-        self.assertEqual((self.root / "output").stat().st_mode & 0o777, 0o700)
+        if sys.platform != "win32":
+            self.assertEqual((self.root / "output").stat().st_mode & 0o777, 0o700)
         with self.assertRaises(ValueError):
             collect(manifest_path, self.root / "output")
 
@@ -257,6 +258,10 @@ class SourceTests(unittest.TestCase):
             self.assertTrue(path.is_relative_to(repository), value)
             self.assertTrue(path.is_file(), value)
         manifest, collection, events = collect(manifest_path, self.root / "example-review")
+        self.assertEqual(
+            (self.root / "example-review" / "pricing.json").read_bytes(),
+            (manifest_path.parent / manifest["pricing"]).read_bytes(),
+        )
         analysis = analyze(collection, events, annotations(manifest_path, manifest, events))
         expected = json.loads((repository / "examples" / "creation-source.json").read_text())["expected"]
         for field, value in expected.items():
