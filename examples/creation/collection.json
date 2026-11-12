@@ -1,0 +1,143 @@
+{
+  "title": "Creating the session-analysis report and player",
+  "timezone": "America/Los_Angeles",
+  "sources": [
+    {
+      "id": "S01",
+      "harness": "codex",
+      "session": "01a1b477-0216-74e2-b942-5a488239fb02",
+      "original_path": "/datadrive/vectorjudgementmodel/sessionreviewer/examples/creation-session.jsonl",
+      "snapshot": "private/sources/S01.jsonl",
+      "sha256": "2b9a9eed331c72e802fa86ac612bbd3e767c605c068890e6c5b9d7c423de0d4f",
+      "bytes": 144596,
+      "raw_records": 411,
+      "start": "2026-11-07T17:06:22.196Z",
+      "end": "2026-11-07T19:35:52.333Z",
+      "outside_interval": 0,
+      "counts": {
+        "user": 22,
+        "assistant": 58,
+        "tool": 154,
+        "usage": 176
+      },
+      "warnings": []
+    }
+  ],
+  "missing_harnesses": {
+    "copilot": "Not part of this selected Codex interaction.",
+    "claude": "Not part of this selected Codex interaction.",
+    "cursor": "No export supplied; not part of this selected interaction.",
+    "replit": "No export supplied; not part of this selected interaction."
+  },
+  "warnings": [],
+  "pricing": {
+    "snapshot": "pricing.json",
+    "sha256": "c94afcf0c6fc7ea0bd21d00bbb07e40d8fcac56a98f87908bbefe638abfb9f2f",
+    "original_path": "/datadrive/vectorjudgementmodel/sessionreviewer/examples/pricing-rates.json",
+    "card": {
+      "verified_on": "2026-11-07",
+      "currency": "USD",
+      "unit": "per million tokens",
+      "basis": "Standard global API-equivalent token processing; not actual harness subscription spend",
+      "sources": {
+        "anthropic": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "anthropic_rate_card": "https://assets.claude.com/5633dc848caa431115468f31c7085d695bbfb9cc.pdf",
+        "openai": "https://developers.openai.com/api/docs/pricing",
+        "sol": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+        "astra": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+        "nano": "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
+        "mini": "https://developers.openai.com/api/docs/models/gpt-4o-mini",
+        "luna": "https://developers.openai.com/api/docs/models/gpt-6-luna"
+      },
+      "models": {
+        "claude-opus-5-5": {
+          "input": 4,
+          "cache_read": 0.2,
+          "cache_write": 5,
+          "output": 20,
+          "write_ttl_seconds": 300,
+          "source": "anthropic"
+        },
+        "claude-mythos-5-1": {
+          "input": 10,
+          "cache_read": 0.25,
+          "cache_write": 12.5,
+          "output": 50,
+          "write_ttl_seconds": 300,
+          "source": "anthropic"
+        },
+        "claude-sonnet-5": {
+          "input": 2,
+          "cache_read": 0.2,
+          "cache_write": 2.5,
+          "output": 10,
+          "write_ttl_seconds": 300,
+          "source": "anthropic"
+        },
+        "gpt-6.1-sol": {
+          "input": 2,
+          "cache_read": 0.1,
+          "cache_write": 2.5,
+          "output": 10,
+          "write_ttl_seconds": 1800,
+          "long_context_threshold": 272000,
+          "long_input_multiplier": 2,
+          "long_output_multiplier": 1.5,
+          "source": "sol"
+        },
+        "gpt-6-astra": {
+          "input": 10,
+          "cache_read": 1,
+          "cache_write": 12.5,
+          "output": 50,
+          "write_ttl_seconds": 1800,
+          "long_context_threshold": 272000,
+          "long_input_multiplier": 2,
+          "long_output_multiplier": 1.5,
+          "source": "astra"
+        },
+        "gpt-5.4-nano": {
+          "input": 0.2,
+          "cache_read": 0.02,
+          "cache_write": 0.2,
+          "output": 1.25,
+          "write_ttl_seconds": null,
+          "source": "nano",
+          "note": "No writes recorded; unused write rate is ordinary input rate."
+        },
+        "gpt-4o-mini": {
+          "input": 0.15,
+          "cache_read": 0.075,
+          "cache_write": 0.15,
+          "output": 0.6,
+          "write_ttl_seconds": null,
+          "source": "mini",
+          "note": "No writes recorded; unused write rate is ordinary input rate."
+        },
+        "gpt-5.6-luna-utility": null,
+        "gpt-6-luna": {
+          "input": 0.1,
+          "cache_read": 0.01,
+          "cache_write": 0.125,
+          "output": 0.5,
+          "write_ttl_seconds": 1800,
+          "long_context_threshold": 272000,
+          "long_input_multiplier": 2,
+          "long_output_multiplier": 1.5,
+          "source": "luna",
+          "verified_on": "2026-11-08",
+          "note": "Added for the 2026-11-08 update; standard short-context rates and the 272K long-context rule confirmed on both the model page and the standard pricing table. The 30-minute write rate is used, as for the other Codex OpenAI models."
+        }
+      },
+      "assumptions": [
+        "Reprice the frozen cohort at verified public standard global API rates, regardless of actual subscription, provider or priority tier.",
+        "Claude Code raw requests expose five-minute cache writes and standard speed; Copilot exposes 300-second Claude writes and 1800-second Sol writes. The same short-TTL policy is assumed for SQL-only Copilot records without surviving policy fields.",
+        "Use normalized request input tokens including cache read/write to test the 272000-token OpenAI threshold. Apply 2x to all input components and 1.5x to all output on qualifying requests.",
+        "Codex records do not expose cache-write TTLs (no cache writes are recorded for Codex); gpt-6-luna uses the same 30-minute write rate convention as the other OpenAI models.",
+        "No generic utility model substitution. Missing browser usage remains unpriced.",
+        "Exclude subscriptions, credits, tool fees, compute/GPU, storage, taxes, discounts, regional premiums and fast-mode premiums. This estimate does not reconstruct an invoice."
+      ],
+      "verified_on_by_model_note": "All other rates were verified on 2026-11-07; gpt-6-luna was verified on 2026-11-08."
+    }
+  }
+}

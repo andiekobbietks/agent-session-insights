@@ -1,0 +1,27 @@
+{
+  "description": "Scoped, redacted Codex-format export of the session that created the original session-analysis report and player.",
+  "session": "01a1b477-0216-74e2-b942-5a488239fb02",
+  "start": "2026-11-07T17:06:22.196Z",
+  "end": "2026-11-07T19:35:52.333Z",
+  "original_snapshot_sha256": "b2978ddb3cc7fe4137c049f413b885a5d9ddffdbcceb7eb26fe6822b8e37ea10",
+  "export": "creation-session.jsonl",
+  "method": "Reconstructed from the verified normalized evidence. Preserves redacted human/assistant text, timestamps, message/request/turn identities, tool-call names and authoritative per-request usage. Model-context records retain the recorded model identities.",
+  "omitted": [
+    "Events outside the selected interval",
+    "System context and internal reasoning",
+    "Tool arguments and results",
+    "Cumulative/mirrored accounting records and unused native metadata"
+  ],
+  "expected": {
+    "human_inputs": 22,
+    "assistant_messages": 58,
+    "tool_calls": 154,
+    "metered_requests": 176,
+    "input_tokens": 41281530,
+    "output_tokens": 179475,
+    "cache_read_tokens": 40140800,
+    "cache_write_tokens": 0,
+    "estimated_api_equivalent_usd": 12.5873614
+  },
+  "privacy": "Credential redaction is best effort. This export and the paper/player still contain conversation text; review before sharing. The full original history is not included."
+}

@@ -1,0 +1,21 @@
+{
+  "title": "Creating the session-analysis report and player",
+  "timezone": "America/Los_Angeles",
+  "annotations": "creation-annotations.json",
+  "pricing": "pricing-rates.json",
+  "missing_harnesses": {
+    "copilot": "Not part of this selected Codex interaction.",
+    "claude": "Not part of this selected Codex interaction.",
+    "cursor": "No export supplied; not part of this selected interaction.",
+    "replit": "No export supplied; not part of this selected interaction."
+  },
+  "sources": [
+    {
+      "harness": "codex",
+      "path": "creation-session.jsonl",
+      "session": "01a1b477-0216-74e2-b942-5a488239fb02",
+      "start": "2026-11-07T17:06:22.196Z",
+      "end": "2026-11-07T19:35:52.333Z"
+    }
+  ]
+}

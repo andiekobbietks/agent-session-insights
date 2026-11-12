@@ -1,0 +1,154 @@
+# Session Reviewer
+
+A local-first reviewer agent and reproducible analysis pipeline for Copilot CLI,
+Claude Code, Codex, Cursor exports, and Replit conversation exports. Reports and
+standalone players use a fixed Venn visual framework. Content,
+timeline, model usage, and spend are generated from the selected logs; the visual
+theme itself is not generated anew for each session.
+
+## Example paper and embedded replay
+
+This repository includes a generated **project meta-report**: a report about the
+specific session that created the original session-analysis report and player.
+It is not the original cross-harness study.
+
+- [Read the paper / meta-report (PDF)](examples/creation/report.pdf).
+- [Open the HTML meta-report with its embedded player](examples/creation/report.html).
+- [Open the standalone player](examples/creation/player.html).
+
+Clone/download the repository and open these HTML files locally. The HTML report
+embeds the adjacent `player.html`; both work offline. GitHub's file viewer does
+not run the player inside the README.
+
+## Run this exact session
+
+From the **repository root** (`sessionreviewer/` in the original workspace),
+using Python 3.12 or later:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+
+python review.py run \
+  --manifest examples/creation.json \
+  --output tmp/creation-review
+```
+
+Open **`tmp/creation-review/report.html`** for the report with embedded playback,
+**`tmp/creation-review/report.pdf`** for the regenerated paper, or
+**`tmp/creation-review/player.html`** for the standalone replay. No server, API key,
+LLM call or GPU is needed. On Linux, if browser system libraries are missing, use
+`python -m playwright install --with-deps chromium` (requires system-install privileges).
+Choose a new output directory for each run: the pipeline refuses to overwrite a
+nonempty one.
+
+The manifest uses only repository-local files:
+
+| Input | Purpose |
+| --- | --- |
+| [`examples/creation-session.jsonl`](examples/creation-session.jsonl) | Scoped, redacted Codex-format session export |
+| [`examples/creation-source.json`](examples/creation-source.json) | Original source hash, scope, export method and expected results |
+| [`examples/creation-annotations.json`](examples/creation-annotations.json) | Nine evidence-linked material directions; all prompts remain in replay |
+| [`examples/pricing-rates.json`](examples/pricing-rates.json) | Frozen historical, cache-aware API-equivalent pricing |
+
+The example is session **`01a1b477-0216-74e2-b942-5a488239fb02`**, scoped inclusively
+to **2026-11-07 17:06:22.196–19:35:52.333 UTC**. Expect **22 user prompts,
+58 assistant messages, 154 tool-call names, and 176 metered requests**, all using
+`gpt-6.1-sol`: **41,281,530 inclusive input tokens**, **179,475 output tokens**,
+and **$12.5873614 estimated API-equivalent cost**. This is not an actual bill or
+newly verified pricing.
+
+The export is reconstructed from verified normalized evidence, not a byte-for-byte
+copy of the full original history. It preserves the selected message text after
+best-effort credential redaction, timestamps, identities, tool-call names and
+per-request accounting; it excludes unrelated history, system context, internal
+reasoning, tool payloads and cumulative mirrors. No original workspace files are
+required to rebuild the example.
+
+Validate the implementation:
+
+```bash
+python -m unittest discover -s tests -v
+node --check assets/player.js
+```
+
+Node is optional for the JavaScript syntax check; the Python tests and publisher
+also exercise the player in Chromium.
+
+Outputs: `report.html`, `report.pdf`, `player.html`, `analysis.json`,
+`events.jsonl`, `collection.json`, `verification.json`, an optional frozen
+`pricing.json`, and private raw snapshots.
+Open `report.html` or `player.html` directly; neither requires a server.
+The output directory is private (0700); files are 0600. It contains conversation
+text and must be reviewed before sharing. Secret redaction is best effort.
+The checked-in example contains conversation text too. Full raw histories and
+runtime `private/` snapshots are not versioned; fresh runs recreate private
+snapshots under the ignored `tmp/` output directory.
+
+## Agent, skills, and prompts
+
+The agent profile is `.github/agents/session-reviewer.agent.md`, with three
+repository skills under `.github/skills/`: collect, analyze, and publish.
+Open this directory as the agent workspace, or copy its `.github` definitions
+into the destination repository. `prompts/review.md` is the reusable task prompt.
+This package does not register agents globally or modify your personal settings.
+The executable pipeline does not call an LLM; the agent supplies evidence-backed
+interpretation in the optional annotations file.
+For a new corpus, first run `review.py prepare --manifest MANIFEST --output DRAFT`
+to obtain stable event IDs and measured usage without rendering. Read the resulting
+evidence, write annotations referencing those IDs, add that file to the manifest,
+point the final manifest at the prepared snapshots in the same source order, and
+use `run` with a different empty output directory for the completed review.
+
+See [DESIGN.md](DESIGN.md) for collection contracts, accounting rules, privacy,
+analysis boundaries, and the player design.
+
+## Supply other sessions
+
+Create a JSON manifest with a title, timezone, and explicit source files. Paths
+are relative to the manifest. Each source needs `harness`, `path`, and `session`.
+Supported harness identifiers: `copilot`, `claude`, `codex`, `cursor`, `replit`.
+Optional `start` and `end` are inclusive timezone-aware ISO timestamps.
+An optional `annotations` path supplies human/agent-reviewed interpretation.
+An optional `pricing` path supplies a dated, cache-aware USD-per-million-token
+rate card (see [`examples/pricing-rates.json`](examples/pricing-rates.json) for the schema). The creation
+example uses that historical snapshot, not newly verified prices. The card and
+its SHA-256 are preserved with the results.
+
+The player shows model calls, input/output tokens, estimated full-session spend,
+spend in the zoomed/time-and-harness-filtered area, and a complete per-input ledger.
+Session totals appear once in a compact strip; a visible-range subtotal appears
+only when the time/harness scope differs. Model/pricing details are collapsed.
+Each prompt has an attached model/cost/token footer, also shown on user entries
+in the full session log and beneath prompts in the HTML/PDF conversation record.
+Selected-turn totals cover the whole recorded turn, not just the visible window or
+elapsed playback. Input includes cached reads/writes; costs subtract them before
+pricing fresh input and apply per-request long-context premiums. Recorded turn IDs
+are preferred; inferred ownership and unattributed requests are labeled.
+Missing model prices produce partial subtotals, never invented zero-dollar bills.
+No metered calls means unknown usage/spend. Undated calls count in session/turn
+totals but cannot be placed in a zoomed time window.
+
+```json
+{
+  "title": "Project review",
+  "timezone": "America/Los_Angeles",
+  "sources": [
+    {"harness": "copilot", "path": "/approved/session/events.jsonl", "session": "session-id"},
+    {"harness": "cursor", "path": "/approved/chat.md", "session": "export-id"}
+  ]
+}
+```
+
+Inventory only an explicitly approved directory:
+
+```bash
+python review.py discover --harness copilot --root /approved/session-directory
+```
+
+Discovery does not read conversation bodies. Review the inventory and select
+files in the manifest; do not ingest unrelated sessions or another user's data.
+For Cursor/Replit, see the export contract in DESIGN.md. Missing exports are
+reported as unavailable, never represented as empty complete histories.

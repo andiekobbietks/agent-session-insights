@@ -1,0 +1,68 @@
+{
+  "summary": "This interaction turns a request for cross-harness usage statistics into an evidence-focused account of human judgment, then an interactive replay. The human sets data scope, editorial framing, cost and timing questions, and the final VCR-style experience. The agent reports finding 42 queued Claude prompts missed by its initial pass, illustrating why coverage checks must inspect harness-specific delivery formats rather than ordinary user-message records alone. Those historical collection and publication results are agent-reported in this review; the present run independently checks only its newly generated outputs.",
+  "decisions": [
+    {
+      "input": "H001",
+      "response": "R004",
+      "title": "Gather three harnesses and examine human steering",
+      "category": "Scope and research question",
+      "analysis": "The opening request specifies Claude, Copilot, and Codex across two project directories, asks for turns/tokens/model mix, and explicitly seeks qualitative analysis of steering. The later response reports 42 additional genuine queued Claude inputs found by a cross-check. This supports a provenance lesson about collection, not an independently established historical total."
+    },
+    {
+      "input": "H009",
+      "response": "R024",
+      "title": "Broaden coverage to browser conversations",
+      "category": "Data coverage",
+      "analysis": "The human adds Claude and OpenAI browser histories and asks to expand the review. The agent reports incorporating 47 identifiable browser inputs while keeping unavailable timing and usage separate. The direction changes the evidence population rather than just the presentation."
+    },
+    {
+      "input": "H010",
+      "response": "R026",
+      "title": "Show the opening project prompt",
+      "category": "Project origin",
+      "analysis": "The request to include image.png makes the project's initial framing visible in the report. The assistant reports adding it near the beginning and regenerating the PDF. The original image and PDF are not independently inspected by this review."
+    },
+    {
+      "input": "H014",
+      "response": "R035",
+      "title": "Write about judgment, not to the requester",
+      "category": "Editorial reframing",
+      "analysis": "The human rejects a second-person deliverable and asks for a project-level account of steering, judgment, and expertise grounded in evidence. The response reports a third-person rewrite covering experimental, technical, product, and editorial judgment. This is a material narrative intervention."
+    },
+    {
+      "input": "H015",
+      "response": "R039",
+      "title": "Make the resource footprint legible",
+      "category": "Cost analysis",
+      "analysis": "The human requests harness/model cost rows and a graph. The agent distinguishes API-equivalent estimates from subscriptions and reports adding them. This review independently reprices the creation session's observed requests using the supplied frozen historical rate card, with cache and long-context adjustments. It does not claim newly verified prices or reconstruct an actual subscription bill."
+    },
+    {
+      "input": "H016",
+      "response": "R042",
+      "title": "Compare the timing of human and agent observations",
+      "category": "Temporal analysis",
+      "analysis": "The human asks when the person and agents were active. The response reports daily/hourly analysis using activity windows. Such bins describe timestamp coverage; neither the request nor the log establishes exact hands-on hours or continuous agent runtime."
+    },
+    {
+      "input": "H017",
+      "response": "R050",
+      "title": "Use comparable reports to deepen the analysis",
+      "category": "Analytical scope",
+      "analysis": "The request asks the agent to step back and seek additional useful questions. Following the intervening approval, the agent reports adding outcome work packages and decision traces that separate completion claims from corroborated artifacts. This demonstrates delegated analytical development, not proof that every historical artifact was correct."
+    },
+    {
+      "input": "H018",
+      "response": "R045",
+      "title": "Make the clock meaningful to the reader",
+      "category": "Timeline presentation",
+      "analysis": "The human specifies Pacific time. The agent reports switching to America/Los_Angeles and checking the recorded period's PST offset. The new reviewer likewise uses an IANA timezone and date-sensitive labels instead of assuming every session has a fixed offset."
+    },
+    {
+      "input": "H020",
+      "response": "R054",
+      "title": "Turn the report into an explorable session replay",
+      "category": "Player design",
+      "analysis": "The human requests a VCR-like timeline showing what happened when and where creative bursts appeared. The agent reports a self-contained player with scrubbing, responses, markers, and clusters. Markers provide navigation through submitted directions; they are not a measured creativity score."
+    }
+  ]
+}
