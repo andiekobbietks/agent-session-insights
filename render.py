@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from accounting import summarize
@@ -209,7 +210,21 @@ def report_html(collection, events, analysis):
     return "".join(html)
 
 
-def publish(output, collection, events, analysis):
+def public_pdf_links(page, base_url):
+    url = urlsplit(base_url)
+    if (url.scheme != "https" or not url.hostname or url.username is not None
+            or url.query or url.fragment):
+        raise ValueError("The public PDF base URL must be an HTTPS site directory.")
+    base_url = base_url.rstrip("/") + "/"
+    page.evaluate("""(base) => {
+        document.querySelectorAll('a[href]').forEach(a => {
+            a.href = new URL(a.getAttribute('href'), base).href;
+        });
+    }""", base_url)
+    return base_url
+
+
+def publish(output, collection, events, analysis, public_base_url=None):
     from playwright.sync_api import sync_playwright
     data = payload(events, analysis)
     html = player_html(data)
@@ -375,6 +390,8 @@ def publish(output, collection, events, analysis):
         assert page.locator(".record .record-usage").count() == analysis["human_inputs"]
         assert page.locator("img").evaluate_all("(images)=>images.every(i=>i.complete&&i.naturalWidth>0)")
         page.evaluate("document.querySelectorAll('details.record').forEach(el=>el.open=true)")
+        if public_base_url:
+            public_base_url = public_pdf_links(page, public_base_url)
         page.pdf(path=str(output / "report.pdf"), format="A4", print_background=True,
                  margin={"top": "14mm", "bottom": "14mm", "left": "12mm", "right": "12mm"})
         page.set_viewport_size({"width": 390, "height": 844})
@@ -384,6 +401,10 @@ def publish(output, collection, events, analysis):
         browser.close()
     pdf = (output / "report.pdf").read_bytes()
     assert pdf.startswith(b"%PDF-") and len(pdf) > 1000
+    if public_base_url:
+        links = re.findall(rb"/URI\s*\(([^)]*)\)", pdf)
+        assert any(link.startswith(public_base_url.encode()) for link in links)
+        assert not any(link.lower().startswith(b"file:") for link in links)
     result = {
         "status": "passed", "source_hashes": "passed", "embedded_data": "passed",
         "all_visible_messages": analysis["human_inputs"] + analysis["assistant_messages"],
@@ -402,6 +423,7 @@ def publish(output, collection, events, analysis):
         "harness_day_filters_and_scrubbing": "passed" if data["meta"]["start"] is not None else "not applicable: undated",
         "desktop_mobile_and_pdf": "passed", "external_network_requests": 0, "browser_errors": errors,
         "pdf_bytes": len(pdf),
+        "pdf_link_base_url": public_base_url,
     }
     (output / "verification.json").write_text(json.dumps(result, indent=2) + "\n")
     for path in output.rglob("*"):

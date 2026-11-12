@@ -270,6 +270,8 @@ def main():
         command_parser = commands.add_parser(command, help=help_text)
         command_parser.add_argument("--manifest", type=Path, required=True)
         command_parser.add_argument("--output", type=Path, required=True)
+        if command == "run":
+            command_parser.add_argument("--public-base-url", help="HTTPS site directory for PDF hyperlinks; HTML stays offline-compatible.")
     args = parser.parse_args()
     os.umask(0o077)
     try:
@@ -286,7 +288,7 @@ def main():
             print(f"Prepared evidence for annotation (not a completed review): {args.output.resolve()}")
             return
         from render import publish
-        publish(args.output.resolve(), collection, events, analysis)
+        publish(args.output.resolve(), collection, events, analysis, args.public_base_url)
         print(f"Verified review: {args.output.resolve() / 'report.html'}")
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f"Review failed: {error}\n")

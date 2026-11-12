@@ -1,13 +1,16 @@
 import json
 from pathlib import Path
+import re
+import shutil
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from sources import epoch, parse, timestamp
+from sources import epoch, parse, redact, timestamp
 from review import analyze, annotations, collect
-from render import payload, player_html, report_html
+from render import payload, player_html, public_pdf_links, report_html
+from scripts.prepare_pages import PUBLIC_FILES, prepare
 
 TIME = "2026-11-07T17:06:22.211Z"
 
@@ -25,6 +28,58 @@ class SourceTests(unittest.TestCase):
             encoding="utf-8",
         )
         return parse(path, {"harness": harness, "session": "test"}, "S01")[0]
+
+    def test_shared_conversation_urls_are_redacted_without_removing_the_prompt(self):
+        for host in ("claude.ai", "chatgpt.com", "chat.openai.com"):
+            text = f"Use [this session](https://{host}/share/example-session?view=1), not https://example.org/docs."
+            expected = "Use [this session]([REDACTED_SHARED_SESSION_URL]), not https://example.org/docs."
+            self.assertEqual(redact(text), expected)
+            events = self.load("codex", [{"type": "response_item", "timestamp": TIME, "payload": {
+                "type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}}])
+            self.assertEqual(events[0]["text"], expected)
+
+    def test_public_pdf_links_preserve_offline_html_and_do_not_fetch_the_site(self):
+        from playwright.sync_api import sync_playwright
+        html = '<a href="player.html#H006">Replay</a><a href="analysis.json">Data</a><a href="#record">Record</a>'
+        path = self.root / "report.html"
+        path.write_text(html)
+        requests = []
+        base = "https://example.org/session/"
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.on("request", lambda request: requests.append(request.url))
+            page.goto(path.as_uri())
+            self.assertEqual(public_pdf_links(page, base.rstrip("/")), base)
+            pdf = page.pdf()
+            browser.close()
+        links = re.findall(rb"/URI\s*\(([^)]*)\)", pdf)
+        self.assertIn((base + "player.html#H006").encode(), links)
+        self.assertIn((base + "analysis.json").encode(), links)
+        self.assertFalse(any(link.lower().startswith(b"file:") for link in links))
+        self.assertFalse(any(url.startswith(("http://", "https://")) for url in requests))
+        self.assertEqual(path.read_text(), html)
+        with self.assertRaises(ValueError):
+            public_pdf_links(None, "http://example.org/session/")
+
+    def test_pages_staging_excludes_private_files_and_rejects_unreviewed_content(self):
+        source = self.root / "review"
+        source.mkdir()
+        bundled = Path(__file__).resolve().parents[1] / "examples" / "creation"
+        for name in PUBLIC_FILES:
+            shutil.copyfile(bundled / name, source / name)
+        (source / "private").mkdir()
+        (source / "private" / "raw.jsonl").write_text("Not approved for publication.")
+        (source / "README.md").write_text("Not a public asset.")
+        output = prepare(source, self.root / "site")
+        self.assertEqual({path.name for path in output.iterdir()}, set(PUBLIC_FILES) | {"index.html"})
+        self.assertEqual((output / "index.html").read_bytes(), (output / "report.html").read_bytes())
+        for number, text in enumerate(("https://claude.ai/share/example-session", "ghp_" + "a" * 30)):
+            (source / "player.html").write_text(text)
+            rejected = self.root / f"rejected-{number}"
+            with self.assertRaisesRegex(ValueError, "review before publishing"):
+                prepare(source, rejected)
+            self.assertFalse(rejected.exists())
 
     def test_codex_mirrors_cumulative_usage_and_context_are_not_counted(self):
         records = [

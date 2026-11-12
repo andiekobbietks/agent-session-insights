@@ -10,10 +10,16 @@ SECRET = re.compile(
     r"|(?i:Bearer\s+)[A-Za-z0-9._~+/-]{16,}"
     r"|(?i:(?:api[_-]?key|password|access[_-]?token)\s*[=:]\s*)[\"']?[A-Za-z0-9_./+-]{12,}[\"']?"
 )
+SHARED_SESSION_URL = re.compile(
+    r"https?://(?:www\.)?(?:claude\.ai|chatgpt\.com|chat\.openai\.com)"
+    r"/share/[^\s<>'\"`)\]}]+", re.IGNORECASE
+)
 
 
 def redact(text):
-    return SECRET.sub("[REDACTED_CREDENTIAL]", text)
+    return SHARED_SESSION_URL.sub(
+        "[REDACTED_SHARED_SESSION_URL]", SECRET.sub("[REDACTED_CREDENTIAL]", text)
+    )
 
 
 def textof(value):

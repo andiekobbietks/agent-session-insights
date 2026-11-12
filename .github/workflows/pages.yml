@@ -1,0 +1,60 @@
+name: Publish reviewed example
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pages.yml"
+      - "examples/**"
+      - "assets/**"
+      - "scripts/prepare_pages.py"
+      - "requirements.txt"
+      - "*.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/configure-pages@v5
+        id: pages
+      - name: Install renderer
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Regenerate and verify the reviewed example
+        env:
+          PUBLIC_BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          python review.py run --manifest examples/creation.json --output tmp/pages-review --public-base-url "$PUBLIC_BASE_URL"
+          python scripts/prepare_pages.py --source tmp/pages-review --output tmp/pages-site
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: tmp/pages-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

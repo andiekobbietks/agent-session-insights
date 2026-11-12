@@ -4062,7 +4062,7 @@
         "id": "H006",
         "harness": "codex",
         "session": "01a1b477-0216-74e2-b942-5a488239fb02",
-        "text": "can you reach this? https://claude.ai/share/b06e93c5-7140-4ba2-84a7-298a5e7c820f",
+        "text": "can you reach this? [REDACTED_SHARED_SESSION_URL]",
         "t": 1794073414787,
         "calls": 6,
         "input": 2268585,

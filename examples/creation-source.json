@@ -10,7 +10,8 @@
     "Events outside the selected interval",
     "System context and internal reasoning",
     "Tool arguments and results",
-    "Cumulative/mirrored accounting records and unused native metadata"
+    "Cumulative/mirrored accounting records and unused native metadata",
+    "External shared-session URLs, replaced with [REDACTED_SHARED_SESSION_URL]"
   ],
   "expected": {
     "human_inputs": 22,
@@ -23,5 +24,5 @@
     "cache_write_tokens": 0,
     "estimated_api_equivalent_usd": 12.5873614
   },
-  "privacy": "Credential redaction is best effort. This export and the paper/player still contain conversation text; review before sharing. The full original history is not included."
+  "privacy": "Credential redaction is best effort. External shared-session URLs are redacted so this reviewed example does not disclose another conversation. The owner approved this selected conversation for public publication; other logs still require review before sharing. The full original history is not included."
 }

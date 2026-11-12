@@ -12,6 +12,12 @@ This repository includes a generated **project meta-report**: a report about the
 specific session that created the original session-analysis report and player.
 It is not the original cross-harness study.
 
+- **Live demo:** [HTML report with embedded replay](https://markrussinovich.github.io/agent-session-insights/),
+  [standalone player](https://markrussinovich.github.io/agent-session-insights/player.html),
+  and [PDF paper](https://markrussinovich.github.io/agent-session-insights/report.pdf).
+
+Repository copies for offline use:
+
 - [Read the paper / meta-report (PDF)](examples/creation/report.pdf).
 - [Open the HTML meta-report with its embedded player](examples/creation/report.html).
 - [Open the standalone player](examples/creation/player.html).
@@ -68,7 +74,7 @@ newly verified pricing.
 
 The export is reconstructed from verified normalized evidence, not a byte-for-byte
 copy of the full original history. It preserves the selected message text after
-best-effort credential redaction, timestamps, identities, tool-call names and
+best-effort credential and shared-session URL redaction, timestamps, identities, tool-call names and
 per-request accounting; it excludes unrelated history, system context, internal
 reasoning, tool payloads and cumulative mirrors. No original workspace files are
 required to rebuild the example.
@@ -92,6 +98,34 @@ text and must be reviewed before sharing. Secret redaction is best effort.
 The checked-in example contains conversation text too. Full raw histories and
 runtime `private/` snapshots are not versioned; fresh runs recreate private
 snapshots under the ignored `tmp/` output directory.
+
+## Public GitHub Pages demo
+
+The example conversation is approved for public sharing; the source repository
+remains private. External shared-session URLs are replaced with
+`[REDACTED_SHARED_SESSION_URL]` so publication does not expose another conversation.
+Recorded usage and cost are unchanged by redaction.
+
+The [Pages workflow](.github/workflows/pages.yml) regenerates and browser-verifies
+the bundled example, then stages only its nine report/player/evidence assets plus
+`index.html`. Raw snapshots, input histories, code, Git history and unrelated
+files are never included in the Pages artifact. Staging rejects recognized
+credentials and unredacted shared-session URLs; this is not a substitute for
+reviewing a new conversation before approving it for publication.
+
+To reproduce the public artifact locally, use fresh output directories:
+
+```bash
+python review.py run --manifest examples/creation.json --output tmp/pages-review \
+  --public-base-url https://markrussinovich.github.io/agent-session-insights/
+python scripts/prepare_pages.py --source tmp/pages-review --output tmp/pages-site
+```
+
+`--public-base-url` makes PDF hyperlinks point to the HTTPS site; HTML and player
+links remain relative and offline-compatible. Omit it for a local-only review.
+Pages is configured to use **GitHub Actions**. Changes to example inputs,
+rendering code or the workflow on `main` redeploy the reviewed demo; a manual
+workflow dispatch is also available.
 
 ## Agent, skills, and prompts
 
