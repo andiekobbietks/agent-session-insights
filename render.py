@@ -46,6 +46,14 @@ def spend(total):
     return f'${total["estimated_usd"]:,.6f}' + (" + unpriced calls" if total["unpriced_calls"] else "")
 
 
+def spend_matches_display(text, expected):
+    match = re.search(r"\$([\d,.]+)", text)
+    if not match:
+        return False
+    displayed = Decimal(match.group(1).replace(",", ""))
+    return abs(displayed - Decimal(str(expected))) <= Decimal("0.0000005")
+
+
 def table(headers, rows):
     return '<div class="table-scroll"><table><thead><tr>' + "".join(
         f"<th>{escape(str(h))}</th>" for h in headers
@@ -110,14 +118,14 @@ def payload(events, analysis):
 
 
 def player_html(data):
-    html = (ASSETS / "player.html").read_text()
+    html = (ASSETS / "player.html").read_text(encoding="utf-8")
     substitutions = {
         "{{TITLE}}": escape(data["meta"]["title"]), "{{TIMEZONE}}": escape(data["meta"]["timezone"]),
         "{{RANGE}}": "selected interaction", "{{HUMANS}}": str(len(data["humans"])),
         "{{RESPONSES}}": str(len(data["updates"])), "{{CALLS}}": str(len(data["usage"])),
         "{{UNDATED}}": str(len(data["undated"])), "{{UNDATED_HIDDEN}}": "" if data["undated"] else "hidden",
-        "/* STYLE */": (ASSETS / "player.css").read_text(),
-        "/* SCRIPT */": (ASSETS / "player.js").read_text(),
+        "/* STYLE */": (ASSETS / "player.css").read_text(encoding="utf-8"),
+        "/* SCRIPT */": (ASSETS / "player.js").read_text(encoding="utf-8"),
     }
     for old, new in substitutions.items():
         html = html.replace(old, new)
@@ -279,8 +287,7 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 if total["estimated_usd"] is None:
                     assert shown == ("Unpriced" if total["calls"] else "No recorded usage"), (scope, shown)
                 else:
-                    displayed = Decimal(shown.split()[0].removeprefix("$").replace(",", ""))
-                    assert abs(displayed - Decimal(str(total["estimated_usd"]))) <= Decimal("0.0000005")
+                    assert spend_matches_display(shown, total["estimated_usd"]), (scope, shown)
                     assert ("+ unpriced calls" in shown) == bool(total["unpriced_calls"])
                 if total["calls"]:
                     assert page.locator(f"#{scope}-tokens").inner_text() == (
@@ -301,8 +308,7 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 if turn["calls"]:
                     assert f'{turn["input"]:,} in · {turn["output"]:,} out' in row["usage"]
                 if turn["estimated_usd"] is not None:
-                    displayed = Decimal(re.search(r"\$([\d,.]+)", row["usage"])[1].replace(",", ""))
-                    assert abs(displayed - Decimal(str(turn["estimated_usd"]))) <= Decimal("0.0000005")
+                    assert spend_matches_display(row["usage"], turn["estimated_usd"]), (row["id"], row["usage"])
                 else:
                     assert ("Unpriced" if turn["calls"] else "No recorded usage") in row["usage"]
         for row in sorted(data["humans"] + data["updates"], key=lambda r: (r["t"], r["order"])):

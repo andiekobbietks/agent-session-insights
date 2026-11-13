@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sources import epoch, parse, redact, timestamp
 from review import analyze, annotations, collect
-from render import payload, player_html, public_pdf_links, publish, report_html
+from render import payload, player_html, public_pdf_links, publish, report_html, spend_matches_display
 from scripts.prepare_pages import PUBLIC_FILES, prepare
 
 TIME = "2026-11-07T17:06:22.211Z"
@@ -61,6 +61,11 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(path.read_text(), html)
         with self.assertRaises(ValueError):
             public_pdf_links(None, "http://example.org/session/")
+
+    def test_spend_display_accepts_half_micro_rounding_and_rejects_larger_errors(self):
+        self.assertTrue(spend_matches_display("$0.318329", 0.3183295))
+        self.assertTrue(spend_matches_display("$1.463448", 1.4634475))
+        self.assertFalse(spend_matches_display("$0.318328", 0.3183295))
 
     def test_pages_staging_excludes_private_files_and_rejects_unreviewed_content(self):
         source = self.root / "review"
@@ -218,7 +223,8 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(collection["sources"][0]["outside_interval"], 1)
         self.assertEqual((self.root / "output" / "pricing.json").read_bytes(), pricing_path.read_bytes())
         self.assertEqual(collection["pricing"]["card"]["verified_on"], "2026-11-07")
-        self.assertEqual((self.root / "output").stat().st_mode & 0o777, 0o700)
+        if sys.platform != "win32":
+            self.assertEqual((self.root / "output").stat().st_mode & 0o777, 0o700)
         with self.assertRaises(ValueError):
             collect(manifest_path, self.root / "output")
 
@@ -281,6 +287,10 @@ class SourceTests(unittest.TestCase):
             self.assertTrue(path.is_relative_to(repository), value)
             self.assertTrue(path.is_file(), value)
         manifest, collection, events = collect(manifest_path, self.root / "example-review")
+        self.assertEqual(
+            (self.root / "example-review" / "pricing.json").read_bytes(),
+            (manifest_path.parent / manifest["pricing"]).read_bytes(),
+        )
         analysis = analyze(collection, events, annotations(manifest_path, manifest, events))
         expected = json.loads((repository / "examples" / "creation-source.json").read_text())["expected"]
         for field, value in expected.items():

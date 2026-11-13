@@ -14,7 +14,7 @@ from sources import HARNESSES, epoch, parse, redact, timestamp
 
 
 def write(path, value):
-    path.write_text(value, encoding="utf-8")
+    path.write_text(value, encoding="utf-8", newline="\n")
     path.chmod(0o600)
 
 
