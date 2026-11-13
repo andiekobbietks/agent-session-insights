@@ -75,12 +75,15 @@ Copilot receives `--agent agent-session-insights`, a scoped
 `--allow-tool write(session-review-UNIQUE/annotations.json)` rule and
 `--deny-tool shell`. The write rule's generated relative suffix identifies just
 that run's annotations file; it grants no access to the report output or sources.
-When both stdin/stdout are terminals it receives `--interactive PROMPT`; otherwise
-it receives `--prompt PROMPT` and exits automatically without needing an approval
-UI. Prompt mode trusts only this generated workspace for the current run using
+It always receives `--prompt PROMPT` and exits automatically without an interactive
+UI, even when stdin/stdout are terminals. Prompt mode trusts only this generated workspace for the current run using
 `--trust-folder`; no persistent trust is saved. No allow-all, shell approvals or
 model overrides are added.
-Claude and Codex retain their positional initial prompt and normal permissions.
+Claude uses `--print --permission-mode dontAsk`, exposes only Read/Glob/Grep/Write/Edit,
+and pre-approves Write/Edit only for the generated annotations path. Other
+permission requests are denied, not presented interactively. Codex uses
+`exec --skip-git-repo-check --sandbox workspace-write` in the generated non-Git
+workspace. All harnesses exit automatically; terminal progress is not an interactive UI.
 A temporary JSON launch request identifies the `"annotate"` phase, frozen
 evidence, annotation destination and absolute final output path resolved before
 changing workspace. The short bootstrap prompt references a generated workspace-

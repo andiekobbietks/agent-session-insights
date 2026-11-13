@@ -275,26 +275,24 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for name in ("report.html", "report.pdf", "player.html", "manifest.json", "discovery.json"):
             self.assertTrue((output / name).is_file(), name)
-        for path in output.rglob("*"):
-            if path.is_file():
-                self.assertIn(str(path.resolve()), result.stdout)
-        self.assertIn(" [private raw snapshot]", result.stdout)
-        self.assertLess(result.stdout.index(str(output / "report.pdf")), result.stdout.index(str(output / "player.html")))
+        self.assertEqual(
+            result.stdout.split("Outputs:\n")[1].splitlines(),
+            [f"  {output / name}" for name in ("report.html", "report.pdf", "player.html")],
+        )
         verification = json.loads((output / "verification.json").read_text())
         self.assertEqual(verification["status"], "passed")
         source.write_text("Live log changed after the report.\n", encoding="utf-8")
         replay = self.root / "prepared-from-snapshots"
         prepared_text = self.command("prepare", "--manifest", output / "manifest.json", "--output", replay)
         self.assertEqual(json.loads((replay / "analysis.json").read_text())["human_inputs"], 1)
-        for path in replay.rglob("*"):
-            if path.is_file():
-                self.assertIn(str(path.resolve()), prepared_text)
+        self.assertNotIn("Outputs:", prepared_text)
         rerendered = self.root / "rerendered"
         with patch("render.publish", side_effect=self.publish_fixture):
             run_text = self.command("run", "--manifest", output / "manifest.json", "--output", rerendered)
-        for path in rerendered.rglob("*"):
-            if path.is_file():
-                self.assertIn(str(path.resolve()), run_text)
+        self.assertEqual(
+            run_text.split("Outputs:\n")[1].splitlines(),
+            [f"  {rerendered / name}" for name in ("report.html", "report.pdf", "player.html")],
+        )
 
     def complete_agent_request(self, command, cwd):
         request = json.loads((cwd / command[-1].split()[1]).read_text(encoding="utf-8"))
@@ -354,8 +352,20 @@ class DiscoveryTests(unittest.TestCase):
                     self.assertTrue(rule.endswith("annotations.json)"))
                     self.assertNotIn("--allow-all-tools", command)
                     self.assertNotIn("--allow-all", command)
+                elif harness == "claude":
+                    self.assertEqual(command[1:4], ["--print", "--permission-mode", "dontAsk"])
+                    self.assertEqual(command[-2], "--")
+                    self.assertEqual(command[command.index("--tools") + 1], "Read,Glob,Grep,Write,Edit")
+                    annotation = "./" + Path(requests[0]["annotations_path"]).relative_to(
+                        launch.call_args.kwargs["cwd"]
+                    ).as_posix()
+                    self.assertEqual(
+                        command[command.index("--allowedTools") + 1],
+                        f"Read,Glob,Grep,Write({annotation}),Edit({annotation})",
+                    )
                 else:
-                    self.assertEqual(len(command), 2)
+                    self.assertEqual(command[1:-1],
+                                     ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write"])
                 request = requests[0]
                 self.assertEqual(request["python_executable"], sys.executable)
                 self.assertFalse(Path(request["reviewer_profile"]).exists())
@@ -374,9 +384,10 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertEqual(json.loads((output / "annotations.json").read_text())["decisions"][0]["input"], "H001")
                 self.assertIn(f"Launching {harness}", text)
                 self.assertIn("Verified review:", text)
-                for path in output.rglob("*"):
-                    if path.is_file():
-                        self.assertIn(str(path.resolve()), text)
+                self.assertEqual(
+                    text.split("Outputs:\n")[1].splitlines(),
+                    [f"  {output / name}" for name in ("report.html", "report.pdf", "player.html")],
+                )
 
     def test_automatic_launch_uses_first_selected_harness_and_original_cwd_output(self):
         self.source("copilot", "older")
@@ -531,28 +542,38 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(manifest["annotations"], "annotations.json")
         self.command("prepare", "--manifest", output / "manifest.json", "--output", self.root / "replay")
 
-    def test_interactive_terminal_keeps_scoped_write_and_denied_shell(self):
+    def test_terminal_launches_each_harness_headlessly(self):
         class TerminalOutput(io.StringIO):
             def isatty(self):
                 return True
 
-        self.source("copilot", "selected")
-        output = self.root / "interactive"
+        for harness in self.homes:
+            with self.subTest(harness=harness):
+                self.source(harness, "selected")
+                output = self.root / f"{harness}-terminal"
 
-        def run(command, cwd):
-            self.assertEqual(command[-2], "--interactive")
-            self.assertNotIn("--trust-folder", command)
-            self.assertEqual(command[command.index("--deny-tool") + 1], "shell")
-            self.complete_agent_request(command, cwd)
-            return subprocess.CompletedProcess(command, 0)
+                def run(command, cwd):
+                    self.assertNotIn("--interactive", command)
+                    if harness == "copilot":
+                        self.assertEqual(command[-2], "--prompt")
+                        self.assertIn("--trust-folder", command)
+                        self.assertEqual(command[command.index("--deny-tool") + 1], "shell")
+                    elif harness == "claude":
+                        self.assertEqual(command[1], "--print")
+                        self.assertNotIn("--dangerously-skip-permissions", command)
+                    else:
+                        self.assertEqual(command[1], "exec")
+                    self.complete_agent_request(command, cwd)
+                    return subprocess.CompletedProcess(command, 0)
 
-        with (patch("review.shutil.which", return_value="copilot.exe"),
-              patch("review.subprocess.run", side_effect=run),
-              patch("render.publish", side_effect=self.publish_fixture),
-              patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo), "--output", str(output)]),
-              patch.object(sys.stdin, "isatty", return_value=True),
-              contextlib.redirect_stdout(TerminalOutput())):
-            main()
+                with (patch("review.shutil.which", return_value=f"{harness}.exe"),
+                      patch("review.subprocess.run", side_effect=run),
+                      patch("render.publish", side_effect=self.publish_fixture),
+                      patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo),
+                                                "--harness", harness, "--output", str(output)]),
+                      patch.object(sys.stdin, "isatty", return_value=True),
+                      contextlib.redirect_stdout(TerminalOutput())):
+                    main()
 
     def test_invalid_agent_annotations_fail_before_publication(self):
         self.source("copilot", "selected")

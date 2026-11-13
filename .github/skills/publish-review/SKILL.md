@@ -28,9 +28,9 @@ unfiltered. Check that model/cost/token metadata sits beneath the user prompt an
 on each human full-log entry, not above the transcript or repeated on agent rows.
 
 Do not modify historical reports or source logs. Do not publish automatically.
-On successful completion, list every generated output with its absolute path,
-not only the HTML report. Put the HTML report, PDF and standalone player first;
-include evidence, verification, images, optional pricing/annotations/manifests,
-and label raw source snapshots private. The Python CLI prints this inventory.
+On successful completion, list only report.html, report.pdf and player.html with
+their absolute paths. Keep supporting evidence, verification, images, optional
+pricing/annotations/manifests and private snapshots in the output directory,
+but do not list them. The Python CLI prints the three report paths.
 If any check fails, fix the implementation and rerun into a fresh output directory,
 or report the failed gate plainly; do not hide missing messages or weaken assertions.

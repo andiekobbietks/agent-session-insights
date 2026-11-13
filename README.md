@@ -58,8 +58,9 @@ or repeat `--session ID` for selected sessions. Automatic discovery supports
 Copilot, Claude and Codex; Cursor/Replit require explicit exports.
 
 Output defaults to **`session-report` in your current working directory**.
-Every generated file is listed at completion, including `report.html`,
-`report.pdf`, and the standalone `player.html`. Existing nonempty directories
+Completion lists only `report.html`, `report.pdf`, and the standalone `player.html`.
+Supporting evidence and verification files remain in the output directory.
+Existing nonempty directories
 are never overwritten; use a fresh `--output` path for each report.
 
 Open the default report in your browser:
@@ -274,12 +275,16 @@ reviewer profile, skills and documentation, not in the installation directory.
 The workspace is removed after the report is generated or the run fails.
 Copilot is granted write approval
 only for that run's annotations file, and shell execution is explicitly denied.
-It uses interactive mode when stdin/stdout are terminals; otherwise it uses
-noninteractive prompt mode, so a report launched from a captured shell command
-does not depend on unavailable approval prompts. In prompt mode, the generated
+All harnesses run headlessly, even from a terminal: Copilot uses `--prompt`,
+Claude uses `--print`, and Codex uses `exec`. Progress or final text may appear
+in the terminal, but no interactive harness UI opens or waits for you to exit.
+For Copilot, the generated
 workspace is trusted for that run only; no persistent folder trust is saved.
-No unrestricted shell or allow-all permissions are granted. In an interactive harness, exit after the
-annotations are written so the Python wrapper can publish the report.
+Claude exposes only file-read/search/edit tools and pre-approves edits only to
+that run's annotations file; other permission requests are denied automatically.
+Codex uses a workspace-write sandbox in the temporary workspace and skips its
+Git-repository check. No allow-all or permission-bypass flags are used.
+The wrapper publishes automatically after the harness exits.
 
 Output defaults to **`.\session-report` in your original current working directory**,
 not automatically inside the repository passed to `--repo` or the harness's
@@ -352,9 +357,10 @@ sessions' artifacts, passed verification, source snapshots and reviewed annotati
 Choose a different empty output directory when rerunning that manifest. The default
 `session-report` directory is ignored by **this repository's** Git configuration;
 in other workspaces, keep private report outputs out of version control yourself.
-Successful `repo`, `run`, and `prepare` commands list every generated file with
-its absolute path. Reports list HTML, PDF and the standalone player first;
-raw snapshots are explicitly labeled private.
+Successful `repo` and `run` commands list only the HTML report, PDF and standalone
+player with their absolute paths. Supporting evidence, verification and private
+snapshots are still saved, but are not listed. `prepare` creates only supporting
+files and does not print a report-output list.
 
 See [DESIGN.md](https://github.com/markrussinovich/agent-session-insights/blob/main/DESIGN.md) for collection contracts, accounting rules, privacy,
 analysis boundaries, and the player design.

@@ -31,9 +31,9 @@ browser/PDF checks. It runs those stages after the harness exits and preserves
 the final annotations, manifest and inventory. Report that annotations are written,
 not that the final report is complete.
 Copilot permits writing only the generated annotations file and denies shell
-execution. Without an interactive terminal it runs in prompt mode, exiting
-automatically after annotation. In a terminal, exit the harness after annotation
-so the wrapper can finish.
+execution. The wrapper always launches harnesses headlessly: Copilot prompt mode,
+Claude print mode, or Codex exec mode. Exit automatically after annotation so
+the wrapper can finish; do not open an interactive session.
 `--noagent` opts out of this launch and produces only deterministic accounting
 and replay, without qualitative interpretation.
 

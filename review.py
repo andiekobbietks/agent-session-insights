@@ -34,15 +34,12 @@ def write_json(path, value):
 
 
 def print_outputs(output):
-    print("Outputs:")
-    primary = {"report.html": 0, "report.pdf": 1, "player.html": 2}
-    files = sorted(
-        (path for path in output.rglob("*") if path.is_file()),
-        key=lambda path: (primary.get(str(path.relative_to(output)), 3), str(path)),
-    )
-    for path in files:
-        private = " [private raw snapshot]" if path.relative_to(output).parts[0] == "private" else ""
-        print(f"  {path.resolve()}{private}")
+    files = [output / name for name in ("report.html", "report.pdf", "player.html")
+             if (output / name).is_file()]
+    if files:
+        print("Outputs:")
+        for path in files:
+            print(f"  {path.resolve()}")
 
 
 def sha256(path):
@@ -371,17 +368,22 @@ def launch_report_agent(harness, manifest, output):
         )
         command = [executable]
         if harness == "copilot":
-            interactive = sys.stdin.isatty() and sys.stdout.isatty()
             command.extend([
                 "--agent", "agent-session-insights",
                 "--allow-tool", f"write({annotations_path.relative_to(workspace)})",
                 "--deny-tool", "shell",
+                "--trust-folder", "--prompt", prompt,
             ])
-            if not interactive:
-                command.append("--trust-folder")
-            command.extend(["--interactive" if interactive else "--prompt", prompt])
+        elif harness == "claude":
+            annotation = "./" + annotations_path.relative_to(workspace).as_posix()
+            command.extend([
+                "--print", "--permission-mode", "dontAsk",
+                "--tools", "Read,Glob,Grep,Write,Edit",
+                "--allowedTools", f"Read,Glob,Grep,Write({annotation}),Edit({annotation})",
+                "--", prompt,
+            ])
         else:
-            command.append(prompt)
+            command.extend(["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", prompt])
         print(f"Launching {harness} to review the prepared evidence. Model charges apply; Python handles publishing.", flush=True)
         result = subprocess.run(command, cwd=workspace)
         if not result.returncode:
