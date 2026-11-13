@@ -24,6 +24,73 @@ is a qualitative expert review. Annotations distinguish a request from an
 agent-reported result. A reported test pass is not an independently verified
 historical artifact. Agent text is evidence of what the agent said.
 
+## Repository-first discovery
+
+A repository-path request authorizes metadata matching in the current user's
+standard native history stores, not whole-home scans or collection of unrelated
+conversation bodies. `review.py discover --repo PATH` inspects Copilot
+`session.start` context, Claude `cwd`/`sessionId` records, and Codex `session_meta`.
+It stops once that session metadata is found, retains no message bodies in the
+inventory, and does not infer a title from a prompt. Native metadata titles are
+optional. Alternative roots require an explicit harness and history directory.
+Default stores honor `COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, and `CODEX_HOME`; Codex
+includes its archived-sessions directory.
+
+An absolute recorded Git root must match the requested directory exactly.
+Otherwise the absolute recorded working directory must equal or descend from
+it, respecting path boundaries (and Windows case-insensitivity). Repository
+mentions in conversation text and remote origin names are not path associations.
+This does not reconstruct moves, worktree relationships, or missing metadata.
+Discovery reports errors and missing stores; it does not certify complete history.
+Subagents are excluded from automatic inventory; explicitly scoped inclusion still
+follows the collection contract below.
+
+The agent lists the sessions and uses multi-selection when requested or when a
+generic report request has multiple matches. It honors explicit IDs or an all-session
+request; it may use a sole match automatically. Once selected, an unspecified
+output location must be prompted, suggesting `session-report` in the current
+workspace/repository. Inventory-only requests do not start collection.
+
+The `review.py repo --repo PATH` command instead chooses the first
+match automatically, optionally restricted by `--harness`. Ordering is descending
+recorded metadata timestamp (not file modification time), undated last, then
+harness/session/path ascending. Repeated `--session` arguments override that default.
+`--all` instead selects every match in that order, still subject to `--harness`;
+it is mutually exclusive with `--session` and works with or without `--noagent`.
+Output defaults to the current working directory's `session-report`, independent
+of the target repository; nonempty directories are refused. Reports preserve the
+inventory and a manifest referencing frozen snapshots.
+
+The wrapper prepares frozen evidence first, then launches the first selected
+session's native harness in this package's workspace for **annotation only**.
+The agent reads normalized events, coverage and measured analysis with file tools
+and writes the one requested annotations JSON. Python validates the annotation
+references and publishes from the same frozen snapshots after the harness exits.
+The agent never needs to invoke a shell or the Python interpreter.
+
+Copilot receives `--agent agent-session-insights`, a scoped
+`--allow-tool write(tmp/SESSION_DIRECTORY/annotations.json)` rule and
+`--deny-tool shell`. The write rule's generated relative suffix identifies just
+that run's annotations file; it grants no access to the report output or sources.
+When both stdin/stdout are terminals it receives `--interactive PROMPT`; otherwise
+it receives `--prompt PROMPT` and exits automatically without needing an approval
+UI. No allow-all, shell approvals, persistent trust or model overrides are added.
+Claude and Codex retain their positional initial prompt and normal permissions.
+A temporary JSON launch request identifies the `"annotate"` phase, frozen
+evidence, annotation destination and absolute final output path resolved before
+changing workspace. The short bootstrap prompt references a generated workspace-
+relative filename; user-provided paths and text are not shell arguments.
+The wrapper requires a successful harness exit, valid reviewed annotations, the
+selected sessions' report artifacts, passed verification and intact private snapshots.
+It preserves annotations with the final manifest before cleaning up its request.
+Missing CLIs and incomplete/failed runs are explicit errors, not silent fallbacks.
+
+`--noagent` bypasses harness launch and runs the deterministic pipeline directly,
+explicitly labeling the absence of qualitative annotations. `prepare` and `run`
+remain deterministic Python-only primitives in both workflows.
+Cursor/Replit discovery cannot infer native harness/session identity from arbitrary
+exports and still requires an explicitly selected manifest.
+
 ## Collection contracts
 
 | Harness | Authorized source | Supported ingestion and limitations |

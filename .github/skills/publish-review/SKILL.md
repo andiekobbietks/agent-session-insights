@@ -3,8 +3,15 @@ name: publish-review
 description: Generate and verify Venn-style HTML/PDF analysis and a standalone zoomable session player.
 ---
 
+For a Python launch request with `"phase": "annotate"`, do not execute publication,
+tests or shell commands. Write reviewed annotations only; the wrapper performs
+all deterministic publication and verification after the harness exits.
+The following instructions apply to a full agent-led review.
+
 Run unit tests, then `review.py run --manifest MANIFEST --output EMPTY_DIRECTORY`.
-Use an explicitly selected output directory, normally under the project's tmp folder.
+Use the user-supplied or confirmed output directory. If none was supplied, ask
+first, suggesting `session-report` in the current workspace/repository. Keep
+preparation output and manifests outside that final empty directory.
 The pipeline must keep raw snapshots private and embed redacted text only.
 
 Validate full prompt/assistant coverage against source, not a proxy such as the number
@@ -21,5 +28,9 @@ unfiltered. Check that model/cost/token metadata sits beneath the user prompt an
 on each human full-log entry, not above the transcript or repeated on agent rows.
 
 Do not modify historical reports or source logs. Do not publish automatically.
+On successful completion, list every generated output with its absolute path,
+not only the HTML report. Put the HTML report, PDF and standalone player first;
+include evidence, verification, images, optional pricing/annotations/manifests,
+and label raw source snapshots private. The Python CLI prints this inventory.
 If any check fails, fix the implementation and rerun into a fresh output directory,
 or report the failed gate plainly; do not hide missing messages or weaken assertions.

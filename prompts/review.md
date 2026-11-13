@@ -1,3 +1,18 @@
+Repository-first requests (no history paths or manifest required):
+
+> What sessions are there for <repo path>? I want to pick one or more for a report.
+
+> Make a report for <repo path>.
+
+Discover this user's matching native session metadata, show the sessions, and let
+me multi-select when I ask to pick or when several sessions match a generic report
+request. If I have not supplied an output location, ask after selection, suggesting
+`session-report` in the current workspace/repository. Do not overwrite existing
+results. Then prepare evidence, add reviewed annotations, and publish locally.
+Cursor/Replit need explicit exports rather than automatic native discovery.
+
+For an explicitly scoped review, use:
+
 Review the creation of <project/artifact> across these authorized histories:
 <explicit Copilot / Claude / Codex / Cursor / Replit paths or exports>.
 

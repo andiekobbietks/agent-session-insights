@@ -9,6 +9,11 @@ excluding them from the qualitative directions ledger.
 
 Use DESIGN.md's token-accounting and timing rules. Inspect collection warnings and
 coverage before interpreting metrics. Missing harnesses and missing usage are not zeros.
+For a Python launch request with `"phase": "annotate"`, use the already prepared
+evidence paths in that request. Read with file tools, write only its annotations
+JSON, and stop. Do not run Python, shell commands, preparation, tests, or publication;
+the wrapper performs and verifies those stages after the harness exits.
+The remaining preparation/publication commands apply to a full agent-led review.
 Use `review.py prepare --manifest MANIFEST --output EMPTY_DRAFT_DIRECTORY` to freeze
 the evidence and obtain event IDs before writing annotations. Publish with `run`
 into a separate empty directory; the preparation directory is not a completed review.
