@@ -299,7 +299,7 @@ def run_review(manifest_path, output, prepare=False, public_base_url=None):
 def agent_workspace():
     resources = Path(__file__).resolve().parent
     with tempfile.TemporaryDirectory(prefix="agent-session-insights-") as directory:
-        workspace = Path(directory)
+        workspace = Path(directory).resolve()
         for relative in (
             Path("README.md"), Path("DESIGN.md"), Path("prompts") / "review.md",
             Path(".github") / "agents" / "agent-session-insights.agent.md",

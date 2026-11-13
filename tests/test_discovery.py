@@ -21,7 +21,7 @@ LATER = "2026-11-08T17:06:22.211Z"
 class DiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
         self.addCleanup(self.directory.cleanup)
         self.repo = self.root / "project"
         self.repo.mkdir()
@@ -300,6 +300,7 @@ class DiscoveryTests(unittest.TestCase):
         request = json.loads((cwd / command[-1].split()[1]).read_text(encoding="utf-8"))
         self.assertEqual(request["phase"], "annotate")
         self.assertNotEqual(cwd, REVIEW.parent)
+        self.assertEqual(cwd, cwd.resolve())
         self.assertTrue(Path(request["reviewer_profile"]).is_file())
         self.assertTrue(all(Path(path).is_file() for path in request["skills"]))
         self.assertTrue((cwd / "README.md").is_file())

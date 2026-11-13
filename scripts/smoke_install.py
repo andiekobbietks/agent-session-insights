@@ -38,7 +38,7 @@ def check():
     if not executable.is_file():
         raise ValueError("The installed console entry point is missing.")
     with tempfile.TemporaryDirectory(prefix="installed-session-review-") as directory:
-        root = Path(directory)
+        root = Path(directory).resolve()
         repo = root / "synthetic-project"
         repo.mkdir()
         history = root / "history" / "synthetic-session"
