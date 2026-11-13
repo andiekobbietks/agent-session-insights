@@ -130,6 +130,20 @@ class DiscoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "matched 2"):
             select_sessions(discover_repository(self.repo), ["old"])
 
+    def test_discovers_sessions_through_native_directory_aliases(self):
+        alias = self.root / "project-alias"
+        try:
+            alias.symlink_to(self.repo, target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"Directory symlinks are unavailable: {error}")
+        self.source("copilot", "aliased", alias / "src")
+        self.source("codex", "canonical", self.repo.resolve())
+        for repository in (self.repo, alias):
+            with self.subTest(repository=repository):
+                result = discover_repository(repository)
+                self.assertEqual({s["session"] for s in result["sessions"]},
+                                 {"aliased", "canonical"})
+
     def test_harness_filter_custom_root_and_archived_codex(self):
         path = self.source("codex", "archived")
         archive = self.homes["codex"] / "archived_sessions"

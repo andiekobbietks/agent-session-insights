@@ -27,6 +27,11 @@ def history_roots():
 def path_key(value):
     if not isinstance(value, str) or not value:
         return None
+    if Path(value).is_absolute():
+        try:
+            value = str(Path(value).resolve())
+        except (OSError, RuntimeError):
+            pass
     if ntpath.splitdrive(value)[0]:
         if not ntpath.isabs(value):
             return None
