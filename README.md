@@ -7,8 +7,7 @@ and evidence-linked analysis in a fixed Venn visual framework.
 
 ## Install a published release
 
-After the first release has been published to PyPI, install in an activated
-Python 3.12+ virtual environment:
+Install from PyPI in an activated Python 3.12+ virtual environment:
 
 ```bash
 python -m pip install agent-session-insights
@@ -421,7 +420,7 @@ reported as unavailable, never represented as empty complete histories.
 ## Publishing releases
 
 The package uses the [MIT license](https://github.com/markrussinovich/agent-session-insights/blob/main/LICENSE). Its name and version are defined in
-`pyproject.toml`; the initial version is `0.1.0`.
+`pyproject.toml`.
 The `.github/workflows/publish.yml` workflow builds the wheel and source
 distribution, checks metadata and packaged files, and runs tests on Windows,
 macOS and Linux. Installed-package smoke tests generate HTML, PDF and a player
@@ -431,8 +430,9 @@ private snapshots and the example conversation are excluded from distributions.
 ### One-time Trusted Publisher setup
 
 Create a GitHub Actions environment named **`pypi`** in this repository's
-**Settings > Environments**. Configure required reviewers and restrict deployment to
-release tags such as `v*` where supported.
+**Settings > Environments**. Allow deployments from **`main`** for automatic
+releases, and release tags such as `v*` if you also use manual GitHub releases.
+Required reviewers are optional; configuring them pauses each upload for approval.
 
 On PyPI, open your account's **Publishing** page and add a pending GitHub Trusted
 Publisher for the first release, or add a publisher to the existing project.
@@ -449,24 +449,41 @@ Use these exact values:
 A pending publisher does not reserve the project name. Registration in your PyPI
 account and the GitHub environment are manual setup steps; adding the workflow
 alone does not configure either service.
+Set the publisher's **Environment** to exactly **`pypi`**, not blank. If PyPI warns
+that an existing publisher allows any environment, constrain it to `pypi` in the
+project's publishing settings.
 
 No PyPI password or API-token secret is needed. Only the publishing job receives
 `id-token: write`; PyPI exchanges its GitHub OIDC identity for short-lived upload
 credentials. The upload uses the exact distributions that passed the build and
 cross-platform tests.
 
-### Create a release
+### Automatic releases from main
 
-1. Update `project.version` in `pyproject.toml`, commit the changes, and push them
-   when ready. Each published version must be new.
-2. Create and publish a GitHub release tagged **`vVERSION`**, for example
-   **`v0.1.0`**, from that commit. The workflow rejects tags that do not match
-   the package version.
-3. Approve deployment to the `pypi` environment if required. The workflow
-   publishes only after all build and test jobs pass.
+Push to **`main`** to release automatically. No manual version bump, tag or GitHub
+release is required:
 
-Pushes, pull requests and a default manual workflow run only build and test;
-they do not publish to PyPI.
+1. The serialized release workflow checks out the latest `main` and checks Git
+   tags and PyPI. An unreleased `project.version` is used as-is; an already
+   released version advances to the first unused patch number, such as
+   `0.1.1` to `0.1.2`. You can still set a new minor or major version manually.
+2. If a bump is needed, the workflow commits and pushes only `pyproject.toml`
+   back to `main`. It builds that exact commit and runs the Windows, macOS and
+   Linux tests against the same source and built wheel.
+3. After all checks pass, it publishes the tested distributions to PyPI using
+   the `pypi` environment, then creates the matching `vVERSION` GitHub release.
+
+The version job and GitHub release job have narrowly scoped `contents: write`.
+They use the built-in `GITHUB_TOKEN`, whose pushes and releases do not trigger
+another workflow run. Repository rules must permit the bot's version commit;
+the workflow does not bypass branch protection. If `main` changes while that
+commit is being pushed, the normal non-fast-forward check stops the run instead
+of overwriting changes. Failed builds/tests do not publish.
+
+Pull requests and default manual workflow runs only build and test.
+A manually published GitHub release is also supported: its tag must exactly
+match `v` plus the package version, and its upload still requires all checks.
+Do not manually release a version that the automatic workflow already published.
 
 For an optional TestPyPI trial, create a separate **`testpypi`** GitHub environment
 and register the same publisher on TestPyPI with environment `testpypi`. Manually

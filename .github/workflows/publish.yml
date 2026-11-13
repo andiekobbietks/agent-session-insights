@@ -16,14 +16,65 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: python-package-${{ github.event_name == 'pull_request' && github.run_id || 'publication' }}
+  cancel-in-progress: false
+
 jobs:
-  build:
+  version:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'markrussinovich/agent-session-insights'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.prepare.outputs.sha }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Prepare an unused release version
+        id: prepare
+        run: |
+          version=$(python scripts/prepare_release.py)
+          if ! git diff --quiet -- pyproject.toml; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pyproject.toml
+            git commit -m "Bump package version to $version" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    if: ${{ !cancelled() && (needs.version.result == 'success' || needs.version.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.version.outputs.sha || github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Record the exact build commit and version
+        id: identity
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\n")
+          PY
       - name: Check release tag
         if: github.event_name == 'release'
         env:
@@ -51,6 +102,7 @@ jobs:
 
   test:
     needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +110,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.sha }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -79,7 +133,7 @@ jobs:
         run: python scripts/smoke_install.py
 
   publish:
-    if: github.event_name == 'release' && github.repository == 'markrussinovich/agent-session-insights'
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.test.result == 'success' && github.repository == 'markrussinovich/agent-session-insights' && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     needs: [build, test]
     runs-on: ubuntu-latest
     environment:
@@ -95,8 +149,24 @@ jobs:
       - name: Publish with PyPI Trusted Publishing
         uses: pypa/gh-action-pypi-publish@release/v1
 
+  release:
+    if: ${{ !cancelled() && needs.publish.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create the matching GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_SHA: ${{ needs.build.outputs.sha }}
+        run: |
+          gh release create "v$VERSION" --target "$RELEASE_SHA" --title "v$VERSION" --generate-notes
+
   publish-testpypi:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_testpypi && github.repository == 'markrussinovich/agent-session-insights'
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.test.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.publish_testpypi && github.repository == 'markrussinovich/agent-session-insights' }}
     needs: [build, test]
     runs-on: ubuntu-latest
     environment:
