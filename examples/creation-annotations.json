@@ -1,68 +1,82 @@
 {
-  "summary": "This interaction turns a request for cross-harness usage statistics into an evidence-focused account of human judgment, then an interactive replay. The human sets data scope, editorial framing, cost and timing questions, and the final VCR-style experience. The agent reports finding 42 queued Claude prompts missed by its initial pass, illustrating why coverage checks must inspect harness-specific delivery formats rather than ordinary user-message records alone. Those historical collection and publication results are agent-reported in this review; the present run independently checks only its newly generated outputs.",
+  "summary": "This is the GitHub Copilot CLI conversation that built Agent Session Insights itself: a reusable reviewer, an interactive player, and a private GitHub repository. The scope starts with the sessionreviewer design request and ends with the completed repository push, excluding earlier prompt recovery and later Pages setup. It includes 12 typed prompts and three genuine form answers. Human direction determines the multi-harness scope, fixed Venn theme, navigation, accounting, information hierarchy, reproducible example, privacy and project name. Historical replies mentioning 22 prompts, 176 requests or $12.587361 describe the earlier Codex fixture used during development, not this Copilot session's measured usage. Historical delivery and test claims remain agent-reported; this run independently verifies the newly generated report and player.",
   "decisions": [
     {
       "input": "H001",
       "response": "R004",
-      "title": "Gather three harnesses and examine human steering",
-      "category": "Scope and research question",
-      "analysis": "The opening request specifies Claude, Copilot, and Codex across two project directories, asks for turns/tokens/model mix, and explicitly seeks qualitative analysis of steering. The later response reports 42 additional genuine queued Claude inputs found by a cross-check. This supports a provenance lesson about collection, not an independently established historical total."
+      "title": "Turn a one-off replay into a reusable reviewer",
+      "category": "Architecture and scope",
+      "analysis": "The human requests a standalone sessionreviewer directory, agent skills and prompts, collection across five harnesses, analysis, an HTML/PDF report and a standalone player. The response reports implementing the package and testing it on the earlier creation-session fixture. The requested product is a report of agent work, not merely a raw trace viewer."
+    },
+    {
+      "input": "H002",
+      "response": "R001",
+      "title": "Preserve the existing Venn visual framework",
+      "category": "Explicit design choice",
+      "analysis": "This recorded form answer selects the existing Venn report/player design. The assistant confirms it will preserve that framework. The theme is fixed; the later clarification distinguishes log-driven content and metrics from dynamically generated visual design."
+    },
+    {
+      "input": "H003",
+      "response": "R006",
+      "title": "Use direct manipulation for transcript and timeline navigation",
+      "category": "Player interaction",
+      "analysis": "The human specifies arrow buttons on the right, click-and-drag zoom and a scrollbar. This replaces a vague zoom requirement with concrete interaction behavior. The assistant reports right-aligned arrows, drag selection and scroll-based panning; the new publishing checks independently exercise those controls."
+    },
+    {
+      "input": "H004",
+      "response": "R009",
+      "title": "Make model usage and resource costs inspectable",
+      "category": "Accounting and transparency",
+      "analysis": "The human asks for models, estimated session spend, spend within the zoomed region, and per-turn input/output tokens and cost. The response distinguishes the fixed theme from computed content and reports adding cache-aware historical API-equivalent estimates. The dollar amount quoted in that historical response belongs to the old Codex test fixture; this report computes a separate estimate for the selected Copilot requests."
+    },
+    {
+      "input": "H005",
+      "response": "R011",
+      "title": "Attach costs to prompts instead of duplicating summary cards",
+      "category": "Information hierarchy",
+      "analysis": "The human rejects the space used by competing full-session and zoom summaries. The requested hierarchy puts the total in one place and attaches model, input/output tokens and cost to each human prompt, including the full log. The response reports a compact totals strip and prompt footers in the player and complete HTML/PDF record."
+    },
+    {
+      "input": "H006",
+      "response": "R014",
+      "title": "Package a reproducible repository with an embedded example",
+      "category": "Reproducibility",
+      "analysis": "The human requests a Git repository, a README explaining how to run this session, an embedded player and a paper link. The assistant reports a local repository and a clean-checkout reproduction. The bundled example initially used the earlier Codex development fixture; this corrected example now contains the Copilot conversation that built the package and repository."
+    },
+    {
+      "input": "H007",
+      "response": "R012",
+      "title": "Make the paper a meta-report about the project",
+      "category": "Report framing",
+      "analysis": "The form answer explicitly asks for a paper generated for this session, a meta-report for the project, rather than the original cross-harness study. The response agrees to include a creation-session paper alongside the HTML report and embedded replay. This clarification establishes the intended subject of the example."
     },
     {
       "input": "H009",
-      "response": "R024",
-      "title": "Broaden coverage to browser conversations",
-      "category": "Data coverage",
-      "analysis": "The human adds Claude and OpenAI browser histories and asks to expand the review. The agent reports incorporating 47 identifiable browser inputs while keeping unavailable timing and usage separate. The direction changes the evidence population rather than just the presentation."
+      "response": "R021",
+      "title": "Keep the repository private and resolve the name before pushing",
+      "category": "Publication control",
+      "analysis": "The recorded form answer selects private visibility and pauses repository naming for suggestions. The subsequent conversation explores alternatives before the final approval. The final response reports a push to the private agent-session-insights repository. This is a genuine human decision captured through a form, not a synthetic harness instruction."
     },
     {
-      "input": "H010",
-      "response": "R026",
-      "title": "Show the opening project prompt",
-      "category": "Project origin",
-      "analysis": "The request to include image.png makes the project's initial framing visible in the report. The assistant reports adding it near the beginning and regenerating the PDF. The original image and PDF are not independently inspected by this review."
+      "input": "H012",
+      "response": "R017",
+      "title": "Set a practical threshold for naming conflicts",
+      "category": "Decision criterion",
+      "analysis": "The human requires conflict searches but excludes projects with fewer than 100 stars from disqualifying a name. The assistant applies that criterion to further suggestions. Search results and star counts are historical agent reports; this replay does not claim that they remain current."
+    },
+    {
+      "input": "H013",
+      "response": "R018",
+      "title": "Name the analysis product rather than the underlying trace",
+      "category": "Product positioning",
+      "analysis": "The human asks for session, analysis, insights and summary terminology, explicitly distinguishing a report of a trace from the trace itself. The response shifts the proposed names toward readable reports and findings. This reframes the product rather than merely choosing a label."
     },
     {
       "input": "H014",
-      "response": "R035",
-      "title": "Write about judgment, not to the requester",
-      "category": "Editorial reframing",
-      "analysis": "The human rejects a second-person deliverable and asks for a project-level account of steering, judgment, and expertise grounded in evidence. The response reports a third-person rewrite covering experimental, technical, product, and editorial judgment. This is a material narrative intervention."
-    },
-    {
-      "input": "H015",
-      "response": "R039",
-      "title": "Make the resource footprint legible",
-      "category": "Cost analysis",
-      "analysis": "The human requests harness/model cost rows and a graph. The agent distinguishes API-equivalent estimates from subscriptions and reports adding them. This review independently reprices the creation session's observed requests using the supplied frozen historical rate card, with cache and long-context adjustments. It does not claim newly verified prices or reconstruct an actual subscription bill."
-    },
-    {
-      "input": "H016",
-      "response": "R042",
-      "title": "Compare the timing of human and agent observations",
-      "category": "Temporal analysis",
-      "analysis": "The human asks when the person and agents were active. The response reports daily/hourly analysis using activity windows. Such bins describe timestamp coverage; neither the request nor the log establishes exact hands-on hours or continuous agent runtime."
-    },
-    {
-      "input": "H017",
-      "response": "R050",
-      "title": "Use comparable reports to deepen the analysis",
-      "category": "Analytical scope",
-      "analysis": "The request asks the agent to step back and seek additional useful questions. Following the intervening approval, the agent reports adding outcome work packages and decision traces that separate completion claims from corroborated artifacts. This demonstrates delegated analytical development, not proof that every historical artifact was correct."
-    },
-    {
-      "input": "H018",
-      "response": "R045",
-      "title": "Make the clock meaningful to the reader",
-      "category": "Timeline presentation",
-      "analysis": "The human specifies Pacific time. The agent reports switching to America/Los_Angeles and checking the recorded period's PST offset. The new reviewer likewise uses an IANA timezone and date-sensitive labels instead of assuming every session has a fixed offset."
-    },
-    {
-      "input": "H020",
-      "response": "R054",
-      "title": "Turn the report into an explorable session replay",
-      "category": "Player design",
-      "analysis": "The human requests a VCR-like timeline showing what happened when and where creative bursts appeared. The agent reports a self-contained player with scrubbing, responses, markers, and clusters. Markers provide navigation through submitted directions; they are not a measured creativity score."
+      "response": "R021",
+      "title": "Choose Agent Session Insights and authorize the branded repository",
+      "category": "Naming and delivery",
+      "analysis": "The human proposes AgentSessionInsights and then approves proceeding in H015. The assistant agrees to the display name Agent Session Insights and reports rebranding the paper/player and pushing the private repository. The selected interval ends with that delivery response, before the later GitHub Pages discussion."
     }
   ]
 }

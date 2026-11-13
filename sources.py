@@ -142,6 +142,7 @@ def parse(path, spec, source_id):
         return events, warnings, len(records)
 
     model, raw_count, boundary = "unknown", 0, None
+    request_turns = {}
     for line, record in jsonl(path):
         raw_count += 1
         kind, time = record.get("type"), record.get("timestamp")
@@ -180,13 +181,26 @@ def parse(path, spec, source_id):
             data = record.get("data") or {}
             identity = record.get("id", line)
             if kind == "user.message" and not data.get("source"):
-                message("user", line, time, identity, data.get("content"))
+                message("user", line, time, identity, data.get("content"),
+                        turn_id=data.get("interactionId"))
+            elif kind == "human_response.recorded" and data.get("actor") == "human_response":
+                response = data.get("response") or {}
+                if response.get("responseKind") == "ask_user" and response.get("content") is not None:
+                    content = response["content"]
+                    message("user", line, time, identity,
+                            content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, indent=2),
+                            form_response=True)
             elif kind == "assistant.message":
-                message("assistant", line, time, identity, data.get("content"))
+                if data.get("apiCallId") and data.get("interactionId"):
+                    request_turns[data["apiCallId"]] = data["interactionId"]
+                if data.get("phase") not in ("analysis", "reasoning"):
+                    message("assistant", line, time, identity, data.get("content"),
+                            request_id=data.get("apiCallId"), turn_id=data.get("interactionId"))
             elif kind == "session.usage_record":
                 usage = data["usage"]
                 identity = (usage.get("accounting") or {}).get("usageId") or usage.get("apiCallId") or identity
                 emit("usage", line, time, identity, model=usage.get("model") or "unknown",
+                     turn_id=usage.get("interactionId"),
                      **tokens(usage["inputTokens"], usage["outputTokens"],
                               usage.get("cacheReadTokens", 0), usage.get("cacheWriteTokens", 0)))
             elif kind == "tool.execution_start":
@@ -226,6 +240,10 @@ def parse(path, spec, source_id):
                             attachment.get("prompt"))
         else:
             raise ValueError(f"Unsupported harness: {harness}")
+    if harness == "copilot":
+        for event in events:
+            if event["kind"] == "usage" and not event.get("turn_id"):
+                event["turn_id"] = request_turns.get(event["identity"])
     return events, warnings, raw_count
 
 

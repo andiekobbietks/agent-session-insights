@@ -1,35 +1,39 @@
 {
-  "title": "Creating the session-analysis report and player",
+  "title": "Building Agent Session Insights: player, reviewer, and repository",
   "timezone": "America/Los_Angeles",
   "sources": [
     {
       "id": "S01",
-      "harness": "codex",
-      "session": "01a1b477-0216-74e2-b942-5a488239fb02",
+      "harness": "copilot",
+      "session": "53fca206-b87f-4fad-bd90-f09c26d61fac",
       "original_path": "/datadrive/vectorjudgementmodel/sessionreviewer/examples/creation-session.jsonl",
       "snapshot": "private/sources/S01.jsonl",
-      "sha256": "edf7aa8f0aa033924d4bdeb9f1cdef1272333b638e05351c61a3fc113b13d5be",
-      "bytes": 144565,
-      "raw_records": 411,
-      "start": "2026-11-07T17:06:22.196Z",
-      "end": "2026-11-07T19:35:52.333Z",
+      "sha256": "3a5e067acf3a078ba25610ccf4b32c690de4033772edb43df01dfa87876bf860",
+      "bytes": 131291,
+      "raw_records": 372,
+      "start": "2026-11-12T16:45:47.965Z",
+      "end": "2026-11-12T20:06:03.385Z",
       "outside_interval": 0,
       "counts": {
-        "user": 22,
-        "assistant": 58,
-        "tool": 154,
-        "usage": 176
+        "user": 15,
+        "usage": 120,
+        "tool": 216,
+        "assistant": 21
       },
-      "warnings": []
+      "warnings": [
+        "Event-log-only import: SQL-only and unrecorded auxiliary requests are not reconstructed."
+      ]
     }
   ],
   "missing_harnesses": {
-    "copilot": "Not part of this selected Codex interaction.",
-    "claude": "Not part of this selected Codex interaction.",
+    "claude": "No source supplied; not part of this selected Copilot CLI interaction.",
+    "codex": "Historical Codex logs were development inputs, not this example's conversation.",
     "cursor": "No export supplied; not part of this selected interaction.",
     "replit": "No export supplied; not part of this selected interaction."
   },
-  "warnings": [],
+  "warnings": [
+    "S01: Event-log-only import: SQL-only and unrecorded auxiliary requests are not reconstructed."
+  ],
   "pricing": {
     "snapshot": "pricing.json",
     "sha256": "c94afcf0c6fc7ea0bd21d00bbb07e40d8fcac56a98f87908bbefe638abfb9f2f",
