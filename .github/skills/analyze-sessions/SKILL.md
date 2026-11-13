@@ -11,7 +11,9 @@ Use DESIGN.md's token-accounting and timing rules. Inspect collection warnings a
 coverage before interpreting metrics. Missing harnesses and missing usage are not zeros.
 For a Python launch request with `"phase": "annotate"`, use the already prepared
 evidence paths in that request. Read with file tools, write only its annotations
-JSON, and stop. Do not run Python, shell commands, preparation, tests, or publication;
+JSON, and stop. Do not run Python, preparation, tests, or publication.
+Shell commands are prohibited except for Codex read-only inspection within the
+generated temporary workspace when direct file-reading tools are unavailable;
 the wrapper performs and verifies those stages after the harness exits.
 The remaining preparation/publication commands apply to a full agent-led review.
 Use `review.py prepare --manifest MANIFEST --output EMPTY_DRAFT_DIRECTORY` to freeze
@@ -24,6 +26,8 @@ corrections, evidence standards, framing, experiments, product direction, and de
 
 Write the annotations JSON described in DESIGN.md. Each decision cites a genuine
 input ID and, when available, a later response ID from the same conversation.
+Use each input ID at most once; combine multiple observations about one input
+into the same decision's analysis.
 Explain what changed and what the evidence cannot establish. Label results as
 agent-reported unless a separate artifact/test was actually inspected.
 Do not rank models by quality from token share, infer original authorship from

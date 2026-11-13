@@ -57,7 +57,8 @@ on `PATH`, and signed in; normal model charges apply. Use `--all` for every matc
 or repeat `--session ID` for selected sessions. Automatic discovery supports
 Copilot, Claude and Codex; Cursor/Replit require explicit exports.
 
-Output defaults to **`session-report` in your current working directory**.
+Output defaults to **`agent-session-reports/<repo-name>` in your current working
+directory**, for example `agent-session-reports/my-project`.
 Completion lists only `report.html`, `report.pdf`, and the standalone `player.html`.
 Supporting evidence and verification files remain in the output directory.
 Existing nonempty directories
@@ -68,13 +69,13 @@ Open the default report in your browser:
 **Windows (PowerShell):**
 
 ```powershell
-Start-Process .\session-report\report.html
+Start-Process .\agent-session-reports\my-project\report.html
 ```
 
 **macOS:**
 
 ```bash
-open ./session-report/report.html
+open ./agent-session-reports/my-project/report.html
 ```
 
 For natural-language session selection and output-location prompts, see
@@ -243,7 +244,7 @@ recorded dates, harnesses, IDs and metadata titles when available. If you ask to
 pick, it prompts for one or more sessions. A generic report request uses a sole
 match or asks you to select if several match; you can also explicitly request all.
 After selection, if you have not supplied an output path, it prompts with
-**`session-report` in the current workspace/repository** as the suggestion.
+**`agent-session-reports/<repo-name>` in the current workspace** as the suggestion.
 The agent then prepares evidence, adds reviewed qualitative annotations, and
 generates the HTML report, PDF and offline player. Existing nonempty results are
 never overwritten.
@@ -283,10 +284,14 @@ workspace is trusted for that run only; no persistent folder trust is saved.
 Claude exposes only file-read/search/edit tools and pre-approves edits only to
 that run's annotations file; other permission requests are denied automatically.
 Codex uses a workspace-write sandbox in the temporary workspace and skips its
-Git-repository check. No allow-all or permission-bypass flags are used.
+Git-repository check. On Windows, it enables `prefer_mxc` for that run so supported
+devices use native MXC isolation, falling back only to a permitted configured
+Windows sandbox. No saved sandbox settings are changed. Codex may use read-only
+shell commands within the temporary workspace when no file-reading tool is
+available. No allow-all or permission-bypass flags are used.
 The wrapper publishes automatically after the harness exits.
 
-Output defaults to **`.\session-report` in your original current working directory**,
+Output defaults to **`.\agent-session-reports\<repo-name>` in your original current working directory**,
 not automatically inside the repository passed to `--repo` or the harness's
 temporary workspace. Use `--output` to change it. With several explicitly selected sessions,
 or with `--all`, the first selected session's harness performs the combined review.
@@ -320,7 +325,7 @@ python review.py repo --repo C:\Source\my-project `
 | `--all` | Combine every matching session, still filtered by `--harness` if supplied. |
 | `--session ID` | Select an ID or `harness:ID`; repeat for multiple sessions. Mutually exclusive with `--all`. |
 | `--harness NAME` | Search only `copilot`, `claude`, or `codex` instead of detecting all three. |
-| `--output PATH` | Empty destination directory; defaults to `session-report` in the caller's working directory. |
+| `--output PATH` | Empty destination directory; defaults to `agent-session-reports/<repo-name>` in the caller's working directory. |
 | `--noagent` | Skip harness launch and qualitative annotations; render directly in Python. |
 | `--root PATH` | Override the native history directory; requires `--harness`. |
 | `--timezone ZONE` | IANA report timezone; defaults to `America/Los_Angeles`. |
@@ -348,14 +353,14 @@ guess project membership or dates. Missing/malformed metadata is not proof that
 no session exists; use an explicit manifest for such histories.
 Cursor/Replit still require explicit conversation exports.
 
-Open `session-report\report.html`, `report.pdf`, or `player.html`. Python repository
+Open `agent-session-reports\<repo-name>\report.html`, `report.pdf`, or `player.html`. Python repository
 runs also save `discovery.json` and a reusable `manifest.json` pointing at the
 frozen private snapshots, plus `annotations.json` for agent-reviewed runs, so
 reruns need not reread changing live logs or repeat model interpretation. A zero
 harness exit status alone is not success: the wrapper requires the selected
 sessions' artifacts, passed verification, source snapshots and reviewed annotations.
 Choose a different empty output directory when rerunning that manifest. The default
-`session-report` directory is ignored by **this repository's** Git configuration;
+`agent-session-reports` directory is ignored by **this repository's** Git configuration;
 in other workspaces, keep private report outputs out of version control yourself.
 Successful `repo` and `run` commands list only the HTML report, PDF and standalone
 player with their absolute paths. Supporting evidence, verification and private

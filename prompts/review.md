@@ -7,7 +7,8 @@ Repository-first requests (no history paths or manifest required):
 Discover this user's matching native session metadata, show the sessions, and let
 me multi-select when I ask to pick or when several sessions match a generic report
 request. If I have not supplied an output location, ask after selection, suggesting
-`session-report` in the current workspace/repository. Do not overwrite existing
+`agent-session-reports/<repo-name>` in the current workspace, using the target
+repository's directory name. Do not overwrite existing
 results. Then prepare evidence, add reviewed annotations, and publish locally.
 Cursor/Replit need explicit exports rather than automatic native discovery.
 

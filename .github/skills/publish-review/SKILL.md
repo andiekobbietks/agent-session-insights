@@ -4,13 +4,16 @@ description: Generate and verify Venn-style HTML/PDF analysis and a standalone z
 ---
 
 For a Python launch request with `"phase": "annotate"`, do not execute publication,
-tests or shell commands. Write reviewed annotations only; the wrapper performs
+tests or shell commands (except Codex read-only inspection within the generated
+temporary workspace when direct file-reading tools are unavailable).
+Write reviewed annotations only; the wrapper performs
 all deterministic publication and verification after the harness exits.
 The following instructions apply to a full agent-led review.
 
 Run unit tests, then `review.py run --manifest MANIFEST --output EMPTY_DIRECTORY`.
 Use the user-supplied or confirmed output directory. If none was supplied, ask
-first, suggesting `session-report` in the current workspace/repository. Keep
+first, suggesting `agent-session-reports/<repo-name>` in the current workspace,
+using the target repository's directory name. Keep
 preparation output and manifests outside that final empty directory.
 The pipeline must keep raw snapshots private and embed redacted text only.
 

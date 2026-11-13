@@ -185,11 +185,11 @@ class DiscoveryTests(unittest.TestCase):
         self.source("copilot", "old")
         self.source("codex", "new", time=LATER)
         original = Path.cwd()
-        os.chdir(self.repo)
+        os.chdir(self.root)
         self.addCleanup(os.chdir, original)
         with patch("render.publish") as publish:
             text = self.command("repo", "--repo", self.repo, "--noagent")
-        output = self.repo / "session-report"
+        output = self.root / "agent-session-reports" / self.repo.name
         self.assertEqual(publish.call_args.args[0], output)
         analysis = json.loads((output / "analysis.json").read_text())
         self.assertEqual(analysis["human_inputs"], 1)
@@ -361,11 +361,13 @@ class DiscoveryTests(unittest.TestCase):
                     ).as_posix()
                     self.assertEqual(
                         command[command.index("--allowedTools") + 1],
-                        f"Read,Glob,Grep,Write({annotation}),Edit({annotation})",
+                        f"Read,Glob,Grep,Edit({annotation})",
                     )
                 else:
-                    self.assertEqual(command[1:-1],
-                                     ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write"])
+                    expected = ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write"]
+                    if os.name == "nt":
+                        expected.extend(["--enable", "prefer_mxc"])
+                    self.assertEqual(command[1:-1], expected)
                 request = requests[0]
                 self.assertEqual(request["python_executable"], sys.executable)
                 self.assertFalse(Path(request["reviewer_profile"]).exists())
@@ -393,14 +395,15 @@ class DiscoveryTests(unittest.TestCase):
         self.source("copilot", "older")
         self.source("claude", "newest", time=LATER)
         original = Path.cwd()
-        os.chdir(self.repo)
+        os.chdir(self.root)
         self.addCleanup(os.chdir, original)
         commands = []
 
         def run(command, cwd):
             commands.append(command)
             request = self.complete_agent_request(command, cwd)
-            self.assertEqual(Path(request["output_directory"]), self.repo / "session-report")
+            self.assertEqual(Path(request["output_directory"]),
+                             self.root / "agent-session-reports" / self.repo.name)
             return subprocess.CompletedProcess(command, 0)
 
         with (patch("review.shutil.which", side_effect=lambda name: name),
@@ -408,7 +411,9 @@ class DiscoveryTests(unittest.TestCase):
               patch("render.publish", side_effect=self.publish_fixture)):
             self.command("repo", "--repo", self.repo)
         self.assertEqual(commands[0][0], str(Path("claude").resolve()))
-        analysis = json.loads((self.repo / "session-report" / "analysis.json").read_text())
+        analysis = json.loads(
+            (self.root / "agent-session-reports" / self.repo.name / "analysis.json").read_text()
+        )
         self.assertEqual(set(analysis["harnesses"]), {"claude"})
 
     def test_all_sessions_agent_reviews_combined_evidence_with_newest_harness(self):

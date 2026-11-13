@@ -7,8 +7,10 @@ Read DESIGN.md's collection contracts. Confirm scope from the operator request;
 ask only for unresolved scope/access/export questions and the output location.
 For a Python launch request with `"phase": "annotate"`, collection is already
 complete: read the request and its frozen evidence with file tools, then perform
-only the reviewed-annotation stage. Do not run discovery, preparation, or shell
-commands, and do not change the selected sessions or output location.
+only the reviewed-annotation stage. Do not run discovery or preparation,
+and do not change the selected sessions or output location. Shell commands are
+prohibited except for Codex read-only inspection within the generated temporary
+workspace when direct file-reading tools are unavailable.
 For a repository path, run `python review.py discover --repo REPO_PATH`; optionally
 add the requested `--harness NAME`. This inspects repository/session metadata in
 the current user's native Copilot, Claude, and Codex stores, not message content
@@ -21,7 +23,8 @@ Use `ask_user` for multi-selection when the user wants to pick sessions, or when
 a generic report request has multiple matches and no explicit selection. Honor
 explicit IDs or "all"; a single match may be automatic for a generic report.
 Ask for the output directory after selection if none was given, suggesting the
-absolute `session-report` path in the current workspace/repository. Do not generate
+absolute `agent-session-reports/<repo-name>` path in the current workspace.
+Use the target repository's directory name. Do not generate
 until the user supplies/confirms that path; never overwrite a nonempty directory.
 An inventory-only request needs no output prompt. The command-line `repo` command
 automatically picks the first match and launches its harness (`--noagent` opts out).

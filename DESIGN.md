@@ -48,8 +48,8 @@ follows the collection contract below.
 The agent lists the sessions and uses multi-selection when requested or when a
 generic report request has multiple matches. It honors explicit IDs or an all-session
 request; it may use a sole match automatically. Once selected, an unspecified
-output location must be prompted, suggesting `session-report` in the current
-workspace/repository. Inventory-only requests do not start collection.
+output location must be prompted, suggesting `agent-session-reports/<repo-name>`
+in the current workspace. Inventory-only requests do not start collection.
 
 The `review.py repo --repo PATH` command instead chooses the first
 match automatically, optionally restricted by `--harness`. Ordering is descending
@@ -57,8 +57,9 @@ recorded metadata timestamp (not file modification time), undated last, then
 harness/session/path ascending. Repeated `--session` arguments override that default.
 `--all` instead selects every match in that order, still subject to `--harness`;
 it is mutually exclusive with `--session` and works with or without `--noagent`.
-Output defaults to the current working directory's `session-report`, independent
-of the target repository; nonempty directories are refused. Reports preserve the
+Output defaults to `agent-session-reports/<repo-name>` in the current working
+directory, using the matched repository's directory name, not the caller's.
+Nonempty directories are refused. Reports preserve the
 inventory and a manifest referencing frozen snapshots.
 
 The wrapper prepares frozen evidence first, then launches the first selected
@@ -69,7 +70,10 @@ load project-local agent configuration from the caller's repository.
 The agent reads normalized events, coverage and measured analysis with file tools
 and writes the one requested annotations JSON. Python validates the annotation
 references and publishes from the same frozen snapshots after the harness exits.
-The agent never needs to invoke a shell or the Python interpreter.
+The agent never needs the Python interpreter. Codex, which may lack direct
+file-reading tools, may use read-only shell commands within the temporary
+workspace to inspect the request, guidance and prepared evidence. Logged
+commands are never executed.
 
 Copilot receives `--agent agent-session-insights`, a scoped
 `--allow-tool write(session-review-UNIQUE/annotations.json)` rule and
@@ -77,13 +81,17 @@ Copilot receives `--agent agent-session-insights`, a scoped
 that run's annotations file; it grants no access to the report output or sources.
 It always receives `--prompt PROMPT` and exits automatically without an interactive
 UI, even when stdin/stdout are terminals. Prompt mode trusts only this generated workspace for the current run using
-`--trust-folder`; no persistent trust is saved. No allow-all, shell approvals or
+`--trust-folder`; no persistent trust is saved. No allow-all, broad shell approvals or
 model overrides are added.
 Claude uses `--print --permission-mode dontAsk`, exposes only Read/Glob/Grep/Write/Edit,
-and pre-approves Write/Edit only for the generated annotations path. Other
+and uses an Edit permission rule to pre-approve file creation/edits only for the
+generated annotations path. Other
 permission requests are denied, not presented interactively. Codex uses
 `exec --skip-git-repo-check --sandbox workspace-write` in the generated non-Git
-workspace. All harnesses exit automatically; terminal progress is not an interactive UI.
+workspace. Windows launches add `--enable prefer_mxc` to prefer supported MXC
+isolation without changing saved settings; permitted configured legacy sandbox
+selection remains the fallback. No sandbox bypass or full-access flag is used.
+All harnesses exit automatically; terminal progress is not an interactive UI.
 A temporary JSON launch request identifies the `"annotate"` phase, frozen
 evidence, annotation destination and absolute final output path resolved before
 changing workspace. The short bootstrap prompt references a generated workspace-
@@ -205,6 +213,8 @@ Annotations format: `summary` plus `decisions`, each with `input` (H001-style),
 `title`, `category`, `analysis`, and optional `response` (R001-style). IDs are
 assigned in normalized chronological/source order; review them after selecting scope.
 All references are validated. Responses must follow the input in the same session.
+Each input ID may appear in at most one decision; combine multiple observations
+about the same input in that decision's analysis.
 Sample interpretation is checked in under `examples/creation-annotations.json`.
 
 ## Report and player

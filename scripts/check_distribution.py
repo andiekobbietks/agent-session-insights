@@ -16,7 +16,7 @@ def check(directory):
     for name in wheel_names + source_names:
         path = PurePosixPath(name)
         if (path.is_absolute() or ".." in path.parts
-                or set(path.parts) & {"private", "raw", "session-report", "tmp", "examples", ".git"}
+                or set(path.parts) & {"private", "raw", "session-report", "agent-session-reports", "tmp", "examples", ".git"}
                 or path.suffix in {".jsonl", ".db", ".sqlite", ".pem", ".key"}
                 or any(part == ".env" or part.startswith(".env.") for part in path.parts)):
             raise ValueError(f"Unexpected private/history artifact in distribution: {name}")
