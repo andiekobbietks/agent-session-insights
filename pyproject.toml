@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-session-insights"
+version = "0.1.0"
+description = "Evidence-linked reports and offline players for coding-agent sessions."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Agent Session Insights contributors"}]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development",
+]
+dependencies = [
+  "playwright==1.64.1",
+  "tzdata>=2024.1; sys_platform == 'win32'",
+]
+
+[project.scripts]
+agent-session-insights = "agent_session_insights.review:main"
+
+[project.urls]
+Homepage = "https://github.com/markrussinovich/agent-session-insights"
+Documentation = "https://github.com/markrussinovich/agent-session-insights#readme"
+Issues = "https://github.com/markrussinovich/agent-session-insights/issues"
+
+[tool.hatch.build.targets.wheel]
+only-include = [
+  "__init__.py",
+  "__main__.py",
+  "accounting.py",
+  "discovery.py",
+  "render.py",
+  "review.py",
+  "sources.py",
+  "assets/player.css",
+  "assets/player.html",
+  "assets/player.js",
+  ".github/agents/agent-session-insights.agent.md",
+  ".github/skills/collect-sessions/SKILL.md",
+  ".github/skills/analyze-sessions/SKILL.md",
+  ".github/skills/publish-review/SKILL.md",
+  "README.md",
+  "DESIGN.md",
+  "prompts/review.md",
+]
+
+# Keep checkout commands working without installing generic top-level modules.
+[tool.hatch.build.targets.wheel.sources]
+"" = "agent_session_insights"
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+  "pyproject.toml",
+  "LICENSE",
+  "__init__.py",
+  "__main__.py",
+  "accounting.py",
+  "discovery.py",
+  "render.py",
+  "review.py",
+  "sources.py",
+  "assets/player.css",
+  "assets/player.html",
+  "assets/player.js",
+  ".github/agents/agent-session-insights.agent.md",
+  ".github/skills/collect-sessions/SKILL.md",
+  ".github/skills/analyze-sessions/SKILL.md",
+  ".github/skills/publish-review/SKILL.md",
+  "README.md",
+  "DESIGN.md",
+  "prompts/review.md",
+  "requirements.txt",
+]

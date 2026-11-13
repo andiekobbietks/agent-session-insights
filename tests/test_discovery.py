@@ -285,6 +285,11 @@ class DiscoveryTests(unittest.TestCase):
     def complete_agent_request(self, command, cwd):
         request = json.loads((cwd / command[-1].split()[1]).read_text(encoding="utf-8"))
         self.assertEqual(request["phase"], "annotate")
+        self.assertNotEqual(cwd, REVIEW.parent)
+        self.assertTrue(Path(request["reviewer_profile"]).is_file())
+        self.assertTrue(all(Path(path).is_file() for path in request["skills"]))
+        self.assertTrue((cwd / "README.md").is_file())
+        self.assertTrue((cwd / "DESIGN.md").is_file())
         for path in request["evidence"].values():
             self.assertTrue(Path(path).is_file())
         self.assertFalse(Path(request["output_directory"]).exists())
@@ -322,14 +327,15 @@ class DiscoveryTests(unittest.TestCase):
                     text = self.command("repo", "--repo", self.repo, "--harness", harness,
                                         "--output", output, "--timezone", "UTC", "--pricing", pricing)
                 command = launch.call_args.args[0]
-                self.assertEqual(launch.call_args.kwargs, {"cwd": REVIEW.parent})
+                self.assertFalse(launch.call_args.kwargs["cwd"].exists())
                 self.assertEqual(command[0], f"{harness}.exe")
                 if harness == "copilot":
                     self.assertEqual(command[1:3], ["--agent", "agent-session-insights"])
                     self.assertEqual(command[-2], "--prompt")
+                    self.assertIn("--trust-folder", command)
                     self.assertEqual(command[command.index("--deny-tool") + 1], "shell")
                     rule = command[command.index("--allow-tool") + 1]
-                    self.assertTrue(rule.startswith("write(tmp"))
+                    self.assertTrue(rule.startswith("write(session-review-"))
                     self.assertTrue(rule.endswith("annotations.json)"))
                     self.assertNotIn("--allow-all-tools", command)
                     self.assertNotIn("--allow-all", command)
@@ -337,7 +343,7 @@ class DiscoveryTests(unittest.TestCase):
                     self.assertEqual(len(command), 2)
                 request = requests[0]
                 self.assertEqual(request["python_executable"], sys.executable)
-                self.assertTrue(Path(request["reviewer_profile"]).is_file())
+                self.assertFalse(Path(request["reviewer_profile"]).exists())
                 self.assertEqual(len(request["skills"]), 3)
                 self.assertIn("Do not rediscover", " ".join(request["instructions"]))
                 self.assertFalse(Path(request["manifest_path"]).exists())
@@ -477,6 +483,7 @@ class DiscoveryTests(unittest.TestCase):
             "from review import write_json\n"
             "request = json.loads(Path(sys.argv[-1].split()[1]).read_text(encoding='utf-8'))\n"
             "assert '--prompt' in sys.argv and '--interactive' not in sys.argv\n"
+            "assert '--trust-folder' in sys.argv\n"
             "assert sys.argv[sys.argv.index('--deny-tool') + 1] == 'shell'\n"
             "rule = sys.argv[sys.argv.index('--allow-tool') + 1]\n"
             "assert rule == 'write(' + str(Path(request['annotations_path']).relative_to(Path.cwd())) + ')'\n"
@@ -516,6 +523,7 @@ class DiscoveryTests(unittest.TestCase):
 
         def run(command, cwd):
             self.assertEqual(command[-2], "--interactive")
+            self.assertNotIn("--trust-folder", command)
             self.assertEqual(command[command.index("--deny-tool") + 1], "shell")
             self.complete_agent_request(command, cwd)
             return subprocess.CompletedProcess(command, 0)

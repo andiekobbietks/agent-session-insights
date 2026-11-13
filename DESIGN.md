@@ -62,19 +62,24 @@ of the target repository; nonempty directories are refused. Reports preserve the
 inventory and a manifest referencing frozen snapshots.
 
 The wrapper prepares frozen evidence first, then launches the first selected
-session's native harness in this package's workspace for **annotation only**.
+session's native harness in a private temporary workspace for **annotation only**.
+The workspace contains copies of only the bundled reviewer profile, skills,
+README, design and task prompt. It does not write into the installed package or
+load project-local agent configuration from the caller's repository.
 The agent reads normalized events, coverage and measured analysis with file tools
 and writes the one requested annotations JSON. Python validates the annotation
 references and publishes from the same frozen snapshots after the harness exits.
 The agent never needs to invoke a shell or the Python interpreter.
 
 Copilot receives `--agent agent-session-insights`, a scoped
-`--allow-tool write(tmp/SESSION_DIRECTORY/annotations.json)` rule and
+`--allow-tool write(session-review-UNIQUE/annotations.json)` rule and
 `--deny-tool shell`. The write rule's generated relative suffix identifies just
 that run's annotations file; it grants no access to the report output or sources.
 When both stdin/stdout are terminals it receives `--interactive PROMPT`; otherwise
 it receives `--prompt PROMPT` and exits automatically without needing an approval
-UI. No allow-all, shell approvals, persistent trust or model overrides are added.
+UI. Prompt mode trusts only this generated workspace for the current run using
+`--trust-folder`; no persistent trust is saved. No allow-all, shell approvals or
+model overrides are added.
 Claude and Codex retain their positional initial prompt and normal permissions.
 A temporary JSON launch request identifies the `"annotate"` phase, frozen
 evidence, annotation destination and absolute final output path resolved before

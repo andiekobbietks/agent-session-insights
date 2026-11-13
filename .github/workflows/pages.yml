@@ -9,6 +9,7 @@ on:
       - "assets/**"
       - "scripts/prepare_pages.py"
       - "requirements.txt"
+      - "pyproject.toml"
       - "*.py"
   workflow_dispatch:
 

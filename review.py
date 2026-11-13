@@ -2,6 +2,7 @@
 """Local collection, analysis, and publishing entry point."""
 import argparse
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from datetime import datetime
 import hashlib
 import json
@@ -13,9 +14,14 @@ import sys
 import tempfile
 from zoneinfo import ZoneInfo
 
-from accounting import account, validate_rates
-from discovery import discover_repository, select_sessions
-from sources import HARNESSES, epoch, parse, redact, timestamp
+if __package__:
+    from .accounting import account, validate_rates
+    from .discovery import discover_repository, select_sessions
+    from .sources import HARNESSES, epoch, parse, redact, timestamp
+else:
+    from accounting import account, validate_rates
+    from discovery import discover_repository, select_sessions
+    from sources import HARNESSES, epoch, parse, redact, timestamp
 
 
 def write(path, value):
@@ -281,9 +287,29 @@ def run_review(manifest_path, output, prepare=False, public_base_url=None):
     analysis = analyze(collection, events, interpretation)
     write_json(output / "analysis.json", analysis)
     if not prepare:
-        from render import publish
+        if __package__:
+            from .render import publish
+        else:
+            from render import publish
         publish(output, collection, events, analysis, public_base_url)
     return collection
+
+
+@contextmanager
+def agent_workspace():
+    resources = Path(__file__).resolve().parent
+    with tempfile.TemporaryDirectory(prefix="agent-session-insights-") as directory:
+        workspace = Path(directory)
+        for relative in (
+            Path("README.md"), Path("DESIGN.md"), Path("prompts") / "review.md",
+            Path(".github") / "agents" / "agent-session-insights.agent.md",
+            *(Path(".github") / "skills" / name / "SKILL.md"
+              for name in ("collect-sessions", "analyze-sessions", "publish-review")),
+        ):
+            target = workspace / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(resources / relative, target)
+        yield workspace
 
 
 def launch_report_agent(harness, manifest, output):
@@ -293,10 +319,7 @@ def launch_report_agent(harness, manifest, output):
             f"{harness} CLI was not found on PATH. Install/sign in to that harness, "
             "or use --noagent for a Python-only report without qualitative annotations."
         )
-    workspace = Path(__file__).resolve().parent
-    scratch = workspace / "tmp"
-    scratch.mkdir(mode=0o700, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="session-review-", dir=scratch) as directory:
+    with agent_workspace() as workspace, tempfile.TemporaryDirectory(prefix="session-review-", dir=workspace) as directory:
         directory = Path(directory)
         manifest_path = directory / "manifest.json"
         request_path = directory / "request.json"
@@ -347,12 +370,15 @@ def launch_report_agent(harness, manifest, output):
         )
         command = [executable]
         if harness == "copilot":
+            interactive = sys.stdin.isatty() and sys.stdout.isatty()
             command.extend([
                 "--agent", "agent-session-insights",
                 "--allow-tool", f"write({annotations_path.relative_to(workspace)})",
                 "--deny-tool", "shell",
-                "--interactive" if sys.stdin.isatty() and sys.stdout.isatty() else "--prompt", prompt,
             ])
+            if not interactive:
+                command.append("--trust-folder")
+            command.extend(["--interactive" if interactive else "--prompt", prompt])
         else:
             command.append(prompt)
         print(f"Launching {harness} to review the prepared evidence. Model charges apply; Python handles publishing.", flush=True)

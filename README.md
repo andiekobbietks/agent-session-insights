@@ -5,6 +5,31 @@ Claude Code, Codex, Cursor exports, and Replit conversation exports. Reports and
 standalone players show the conversation, timeline, model usage, token accounting,
 and evidence-linked analysis in a fixed Venn visual framework.
 
+## Install a published release
+
+After the first release has been published to PyPI, install in an activated
+Python 3.12+ virtual environment:
+
+```bash
+python -m pip install agent-session-insights
+python -m playwright install chromium
+```
+
+The package installs the `agent-session-insights` command, which works from any
+directory without cloning this repository:
+
+```powershell
+agent-session-insights repo --repo C:\Source\my-project
+agent-session-insights repo --repo C:\Source\my-project --all --output .\tmp\all-sessions-review
+```
+
+You can also use `python -m agent_session_insights` with the same arguments.
+On macOS/Linux, use `python3` if that is your Python command. On Linux, Chromium
+may also need system libraries: `python -m playwright install --with-deps chromium`.
+The native harness CLI must be installed and signed in unless you use `--noagent`.
+For an unpublished checkout, follow the setup below; `python review.py` remains
+supported and accepts the same arguments.
+
 ## Quick start
 
 Complete the [setup](#setup-and-bundled-example) with Python 3.12 or later, then
@@ -39,8 +64,16 @@ are never overwritten; use a fresh `--output` path for each report.
 
 Open the default report in your browser:
 
+**Windows (PowerShell):**
+
 ```powershell
 Start-Process .\session-report\report.html
+```
+
+**macOS:**
+
+```bash
+open ./session-report/report.html
 ```
 
 For natural-language session selection and output-location prompts, see
@@ -57,9 +90,9 @@ The bundled example reviews the Copilot CLI conversation that built this project
 
 Repository copies for offline use:
 
-- [Read the report (PDF)](examples/creation/report.pdf).
-- [Open the HTML report with its embedded player](examples/creation/report.html).
-- [Open the standalone player](examples/creation/player.html).
+- [Read the report (PDF)](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/creation/report.pdf).
+- [Open the HTML report with its embedded player](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/creation/report.html).
+- [Open the standalone player](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/creation/player.html).
 
 Clone/download the repository and open these HTML files locally. The HTML report
 embeds the adjacent `player.html`; both work offline. GitHub's file viewer does
@@ -109,10 +142,10 @@ The manifest uses only repository-local files:
 
 | Input | Purpose |
 | --- | --- |
-| [`examples/creation-session.jsonl`](examples/creation-session.jsonl) | Scoped, redacted Copilot CLI-format export of this project's creation |
-| [`examples/creation-source.json`](examples/creation-source.json) | Original source hash, scope, export method and expected results |
-| [`examples/creation-annotations.json`](examples/creation-annotations.json) | Eleven evidence-linked material directions; all selected inputs remain in replay |
-| [`examples/pricing-rates.json`](examples/pricing-rates.json) | Frozen historical, cache-aware API-equivalent pricing |
+| [`examples/creation-session.jsonl`](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/creation-session.jsonl) | Scoped, redacted Copilot CLI-format export of this project's creation |
+| [`examples/creation-source.json`](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/creation-source.json) | Original source hash, scope, export method and expected results |
+| [`examples/creation-annotations.json`](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/creation-annotations.json) | Eleven evidence-linked material directions; all selected inputs remain in replay |
+| [`examples/pricing-rates.json`](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/pricing-rates.json) | Frozen historical, cache-aware API-equivalent pricing |
 
 The example manifest selects a scoped, redacted session export and includes
 reviewed annotations and a frozen historical pricing card. The rates are not
@@ -157,7 +190,7 @@ snapshots under the ignored `tmp/` output directory.
 External shared-session URLs are replaced with `[REDACTED_SHARED_SESSION_URL]`.
 Review conversation text and generated files before deploying a report.
 
-The [Pages workflow](.github/workflows/pages.yml) regenerates and browser-verifies
+The [Pages workflow](https://github.com/markrussinovich/agent-session-insights/blob/main/.github/workflows/pages.yml) regenerates and browser-verifies
 the bundled example, then stages only its nine report/player/evidence assets plus
 `index.html`. Raw snapshots, input histories, code, Git history and unrelated
 files are never included in the Pages artifact. Staging rejects recognized
@@ -236,17 +269,21 @@ Python freezes the selected logs before launching the harness. The agent only
 reads the prepared evidence and writes the annotations JSON; Python then validates
 the references, renders the report and performs browser/PDF checks.
 
-The harness starts in this package's workspace. Copilot is granted write approval
+The harness starts in a private temporary workspace containing the bundled
+reviewer profile, skills and documentation, not in the installation directory.
+The workspace is removed after the report is generated or the run fails.
+Copilot is granted write approval
 only for that run's annotations file, and shell execution is explicitly denied.
 It uses interactive mode when stdin/stdout are terminals; otherwise it uses
 noninteractive prompt mode, so a report launched from a captured shell command
-does not depend on unavailable approval prompts. No unrestricted shell or
-allow-all permissions are granted. In an interactive harness, exit after the
+does not depend on unavailable approval prompts. In prompt mode, the generated
+workspace is trusted for that run only; no persistent folder trust is saved.
+No unrestricted shell or allow-all permissions are granted. In an interactive harness, exit after the
 annotations are written so the Python wrapper can publish the report.
 
 Output defaults to **`.\session-report` in your original current working directory**,
 not automatically inside the repository passed to `--repo` or the harness's
-workspace. Use `--output` to change it. With several explicitly selected sessions,
+temporary workspace. Use `--output` to change it. With several explicitly selected sessions,
 or with `--all`, the first selected session's harness performs the combined review.
 
 ```powershell
@@ -319,7 +356,7 @@ Successful `repo`, `run`, and `prepare` commands list every generated file with
 its absolute path. Reports list HTML, PDF and the standalone player first;
 raw snapshots are explicitly labeled private.
 
-See [DESIGN.md](DESIGN.md) for collection contracts, accounting rules, privacy,
+See [DESIGN.md](https://github.com/markrussinovich/agent-session-insights/blob/main/DESIGN.md) for collection contracts, accounting rules, privacy,
 analysis boundaries, and the player design.
 
 ## Supply other sessions
@@ -330,7 +367,7 @@ Supported harness identifiers: `copilot`, `claude`, `codex`, `cursor`, `replit`.
 Optional `start` and `end` are inclusive timezone-aware ISO timestamps.
 An optional `annotations` path supplies human/agent-reviewed interpretation.
 An optional `pricing` path supplies a dated, cache-aware USD-per-million-token
-rate card (see [`examples/pricing-rates.json`](examples/pricing-rates.json) for the schema). The creation
+rate card (see [`examples/pricing-rates.json`](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/pricing-rates.json) for the schema). The creation
 example uses that historical snapshot, not newly verified prices. The card and
 its SHA-256 are preserved with the results.
 
@@ -369,3 +406,77 @@ Discovery does not read conversation bodies. Review the inventory and select
 files in the manifest; do not ingest unrelated sessions or another user's data.
 For Cursor/Replit, see the export contract in DESIGN.md. Missing exports are
 reported as unavailable, never represented as empty complete histories.
+
+## Publishing releases
+
+The package uses the [MIT license](https://github.com/markrussinovich/agent-session-insights/blob/main/LICENSE). Its name and version are defined in
+`pyproject.toml`; the initial version is `0.1.0`.
+The `.github/workflows/publish.yml` workflow builds the wheel and source
+distribution, checks metadata and packaged files, and runs tests on Windows,
+macOS and Linux. Installed-package smoke tests generate HTML, PDF and a player
+outside the checkout without model calls. User histories, generated reports,
+private snapshots and the example conversation are excluded from distributions.
+
+### One-time Trusted Publisher setup
+
+Create a GitHub Actions environment named **`pypi`** in this repository's
+**Settings > Environments**. Configure required reviewers and restrict deployment to
+release tags such as `v*` where supported.
+
+On PyPI, open your account's **Publishing** page and add a pending GitHub Trusted
+Publisher for the first release, or add a publisher to the existing project.
+Use these exact values:
+
+| Field | Value |
+| --- | --- |
+| PyPI project name | `agent-session-insights` |
+| GitHub owner | `markrussinovich` |
+| Repository | `agent-session-insights` |
+| Workflow filename | `publish.yml` |
+| Environment | `pypi` |
+
+A pending publisher does not reserve the project name. Registration in your PyPI
+account and the GitHub environment are manual setup steps; adding the workflow
+alone does not configure either service.
+
+No PyPI password or API-token secret is needed. Only the publishing job receives
+`id-token: write`; PyPI exchanges its GitHub OIDC identity for short-lived upload
+credentials. The upload uses the exact distributions that passed the build and
+cross-platform tests.
+
+### Create a release
+
+1. Update `project.version` in `pyproject.toml`, commit the changes, and push them
+   when ready. Each published version must be new.
+2. Create and publish a GitHub release tagged **`vVERSION`**, for example
+   **`v0.1.0`**, from that commit. The workflow rejects tags that do not match
+   the package version.
+3. Approve deployment to the `pypi` environment if required. The workflow
+   publishes only after all build and test jobs pass.
+
+Pushes, pull requests and a default manual workflow run only build and test;
+they do not publish to PyPI.
+
+For an optional TestPyPI trial, create a separate **`testpypi`** GitHub environment
+and register the same publisher on TestPyPI with environment `testpypi`. Manually
+run the workflow with **Publish the tested distributions to TestPyPI** enabled.
+TestPyPI and PyPI require separate publisher registrations.
+
+See the [PyPI Trusted Publishing documentation](https://docs.pypi.org/trusted-publishers/).
+
+### Build locally
+
+From a checkout, install the build tools in a development environment:
+
+```bash
+python -m pip install build twine
+python -m build
+python -m twine check --strict dist/*
+python scripts/check_distribution.py
+```
+
+Install the resulting wheel into a separate clean virtual environment, then
+install Chromium and run `python scripts/smoke_install.py` from the checkout.
+That script uses the installed console/module entry points and synthetic
+sessions, not local user histories. Do not upload with a long-lived API token;
+the release workflow provides Trusted Publishing.

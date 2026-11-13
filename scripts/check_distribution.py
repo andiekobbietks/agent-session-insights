@@ -1,0 +1,45 @@
+"""Check release artifacts without importing the project or reading local histories."""
+from pathlib import Path, PurePosixPath
+import tarfile
+import zipfile
+
+
+def check(directory):
+    wheels = list(directory.glob("*.whl"))
+    sources = list(directory.glob("*.tar.gz"))
+    if len(wheels) != 1 or len(sources) != 1:
+        raise ValueError("Expected exactly one wheel and one source distribution.")
+    with zipfile.ZipFile(wheels[0]) as archive:
+        wheel_names = archive.namelist()
+    with tarfile.open(sources[0]) as archive:
+        source_names = [member.name for member in archive.getmembers() if member.isfile()]
+    for name in wheel_names + source_names:
+        path = PurePosixPath(name)
+        if (path.is_absolute() or ".." in path.parts
+                or set(path.parts) & {"private", "raw", "session-report", "tmp", "examples", ".git"}
+                or path.suffix in {".jsonl", ".db", ".sqlite", ".pem", ".key"}
+                or any(part == ".env" or part.startswith(".env.") for part in path.parts)):
+            raise ValueError(f"Unexpected private/history artifact in distribution: {name}")
+    required = (
+        "__init__.py", "__main__.py", "review.py", "sources.py", "accounting.py",
+        "discovery.py", "render.py", "assets/player.html", "assets/player.css",
+        "assets/player.js", "README.md", "DESIGN.md", "prompts/review.md",
+        ".github/agents/agent-session-insights.agent.md",
+        ".github/skills/collect-sessions/SKILL.md",
+        ".github/skills/analyze-sessions/SKILL.md",
+        ".github/skills/publish-review/SKILL.md",
+    )
+    for name in required:
+        if f"agent_session_insights/{name}" not in wheel_names:
+            raise ValueError(f"Missing wheel runtime resource: {name}")
+        if not any(path.endswith("/" + name) for path in source_names):
+            raise ValueError(f"Missing source distribution resource: {name}")
+    if not any(".dist-info/licenses/LICENSE" in name for name in wheel_names):
+        raise ValueError("The wheel is missing the MIT license.")
+    if any("/" not in name for name in wheel_names):
+        raise ValueError("The wheel must not install unnamespaced top-level files.")
+    print(f"Checked wheel and source distribution in {directory.resolve()}")
+
+
+if __name__ == "__main__":
+    check(Path("dist"))

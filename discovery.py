@@ -4,7 +4,10 @@ import os
 from pathlib import Path
 import posixpath
 
-from sources import jsonl, redact, timestamp
+if __package__:
+    from .sources import jsonl, redact, timestamp
+else:
+    from sources import jsonl, redact, timestamp
 
 NATIVE_HARNESSES = ("copilot", "claude", "codex")
 

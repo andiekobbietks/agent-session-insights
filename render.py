@@ -9,8 +9,12 @@ import re
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from accounting import summarize
-from sources import HARNESSES
+if __package__:
+    from .accounting import summarize
+    from .sources import HARNESSES
+else:
+    from accounting import summarize
+    from sources import HARNESSES
 
 ASSETS = Path(__file__).parent / "assets"
 REPORT_CSS = """
