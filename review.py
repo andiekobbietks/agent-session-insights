@@ -319,6 +319,7 @@ def launch_report_agent(harness, manifest, output):
             f"{harness} CLI was not found on PATH. Install/sign in to that harness, "
             "or use --noagent for a Python-only report without qualitative annotations."
         )
+    executable = str(Path(executable).resolve())
     with agent_workspace() as workspace, tempfile.TemporaryDirectory(prefix="session-review-", dir=workspace) as directory:
         directory = Path(directory)
         manifest_path = directory / "manifest.json"

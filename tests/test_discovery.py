@@ -343,7 +343,7 @@ class DiscoveryTests(unittest.TestCase):
                                         "--output", output, "--timezone", "UTC", "--pricing", pricing)
                 command = launch.call_args.args[0]
                 self.assertFalse(launch.call_args.kwargs["cwd"].exists())
-                self.assertEqual(command[0], f"{harness}.exe")
+                self.assertEqual(command[0], str(Path(f"{harness}.exe").resolve()))
                 if harness == "copilot":
                     self.assertEqual(command[1:3], ["--agent", "agent-session-insights"])
                     self.assertEqual(command[-2], "--prompt")
@@ -396,7 +396,7 @@ class DiscoveryTests(unittest.TestCase):
               patch("review.subprocess.run", side_effect=run),
               patch("render.publish", side_effect=self.publish_fixture)):
             self.command("repo", "--repo", self.repo)
-        self.assertEqual(commands[0][0], "claude")
+        self.assertEqual(commands[0][0], str(Path("claude").resolve()))
         analysis = json.loads((self.repo / "session-report" / "analysis.json").read_text())
         self.assertEqual(set(analysis["harnesses"]), {"claude"})
 
@@ -406,7 +406,7 @@ class DiscoveryTests(unittest.TestCase):
         output = self.root / "combined-agent"
 
         def run(command, cwd):
-            self.assertEqual(command[0], "claude")
+            self.assertEqual(command[0], str(Path("claude").resolve()))
             request = self.complete_agent_request(command, cwd)
             prepared = json.loads((Path(request["draft_directory"]) / "analysis.json").read_text())
             self.assertEqual(prepared["conversations"], 2)
@@ -520,7 +520,10 @@ class DiscoveryTests(unittest.TestCase):
                 encoding="utf-8",
             )
             executable.chmod(0o700)
-        with patch("review.shutil.which", return_value=str(executable)):
+        original = Path.cwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, original)
+        with patch("review.shutil.which", return_value=str(Path(".") / executable.name)):
             text = self.command("repo", "--repo", self.repo, "--output", output)
         self.assertIn("Verified review:", text)
         self.assertEqual(json.loads((output / "verification.json").read_text())["status"], "passed")
