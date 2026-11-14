@@ -479,14 +479,71 @@ def report_repository(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=(
+            "Create evidence-linked coding-agent session reports: report.html, report.pdf, "
+            "and an offline player.html. Use 'repo' for the automatic end-to-end workflow."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples (installed Python package):\n"
+            "  python -m agent_session_insights discover --repo C:\\Source\\my-project\n"
+            "  python -m agent_session_insights repo --repo C:\\Source\\my-project\n"
+            "  python -m agent_session_insights repo --repo C:\\Source\\my-project --all --noagent\n\n"
+            "discover only lists sessions. repo discovers and generates a complete report.\n"
+            "prepare and run require a JSON manifest listing explicit source logs; neither\n"
+            "launches an agent. Use COMMAND --help for inputs, outputs, and examples.\n"
+            "Report destinations must be empty; existing results are never overwritten."
+        ),
+    )
     commands = parser.add_subparsers(dest="command", required=True)
-    inventory = commands.add_parser("discover", help="Inventory an explicitly approved source directory.")
+    inventory = commands.add_parser(
+        "discover", help="List available sessions as JSON; no agent or report generation.",
+        description=(
+            "List sessions whose native metadata matches a repository, without collecting "
+            "whole conversations, launching an agent, or creating report files. Supports "
+            "Copilot, Claude and Codex repository discovery. Alternatively, inventory files "
+            "in an explicit history directory with --harness and --root."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python -m agent_session_insights discover --repo C:\\Source\\my-project\n"
+            "  python -m agent_session_insights discover --repo C:\\Source\\my-project --harness claude\n"
+            "  python -m agent_session_insights discover --harness copilot --root D:\\History\\session-state\n\n"
+            "Use IDs from the JSON inventory with repo --session ID (repeat for multiple).\n"
+            "This command does not select sessions or generate a report."
+        ),
+    )
     inventory.add_argument("--root", type=Path, help="History directory; with --repo, override the native root (requires --harness).")
     inventory.add_argument("--repo", type=Path, help="Match repository metadata in the current user's native history stores.")
-    inventory.add_argument("--harness", choices=HARNESSES)
-    repository = commands.add_parser("repo", help="Discover sessions and launch their harness for a reviewed report.")
-    repository.add_argument("--repo", type=Path, required=True)
+    inventory.add_argument("--harness", choices=HARNESSES, help="Filter repository discovery, or identify the format of an explicit --root.")
+    repository = commands.add_parser(
+        "repo", help="Generate a complete report from repository sessions; launches a headless agent by default.",
+        description=(
+            "Discover repository sessions, freeze the selected logs, obtain agent-reviewed "
+            "annotations, then generate and verify report.html, report.pdf and player.html. "
+            "No manifest is needed. By default, select the newest matching session and "
+            "launch its harness headlessly; the CLI must be installed and signed in, and "
+            "normal model charges apply. Use --noagent for a Python-only report without "
+            "qualitative annotations or model calls."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python -m agent_session_insights repo --repo C:\\Source\\my-project\n"
+            "  python -m agent_session_insights repo --repo C:\\Source\\my-project --all\n"
+            "  python -m agent_session_insights repo --repo C:\\Source\\my-project --session claude:SESSION_ID\n"
+            "  python -m agent_session_insights repo --repo C:\\Source\\my-project --noagent --output .\\python-review\n\n"
+            "Default output: .\\agent-session-reports\\my-project under your current directory,\n"
+            "not necessarily inside the reviewed repository. Nonempty destinations are refused.\n"
+            "--harness filters session discovery; it does not override the reviewing harness.\n"
+            "For multiple sessions, the first selected session's harness reviews the combined evidence.\n"
+            "Completion lists the three report paths; supporting evidence and a reusable\n"
+            "manifest.json are also saved. Use run with that manifest to regenerate a report."
+        ),
+    )
+    repository.add_argument("--repo", type=Path, required=True, help="Accessible local repository directory to match against native session metadata.")
     repository.add_argument("--harness", choices=HARNESSES, help="Limit discovery to this harness; otherwise detect native logs.")
     repository.add_argument("--root", type=Path, help="Override the native history root; requires --harness.")
     selection = repository.add_mutually_exclusive_group()
@@ -496,13 +553,46 @@ def main():
     repository.add_argument("--timezone", default="America/Los_Angeles", help="Report IANA timezone (default: America/Los_Angeles).")
     repository.add_argument("--pricing", type=Path, help="Optional approved, dated pricing card; otherwise spend is unknown.")
     repository.add_argument("--noagent", action="store_true", help="Render directly in Python without launching a harness or qualitative review.")
-    for command, help_text in (
-        ("prepare", "Freeze and normalize sources for qualitative annotation; not a published review."),
-        ("run", "Collect, analyze, render, and verify a local review."),
+    for command, help_text, description, example in (
+        (
+            "prepare", "Create frozen evidence for annotation from a manifest; no agent or HTML/PDF/player.",
+            "Read the explicit source logs in a JSON manifest, freeze private copies, normalize "
+            "messages and usage, and compute measured analysis with qualitative review marked "
+            "pending. Writes collection.json, events.jsonl, analysis.json and private source "
+            "snapshots. Does not launch an agent, use supplied qualitative annotations, or "
+            "generate HTML, PDF or a player. This is an optional intermediate step for custom "
+            "annotation workflows; ordinary users should use repo.",
+            "  python -m agent_session_insights prepare --manifest .\\review.json --output .\\review-draft\n\n"
+            "Review the evidence and write annotations separately, then use run with a manifest\n"
+            "referencing the frozen sources and annotations. A draft is not a completed report.",
+        ),
+        (
+            "run", "Generate and verify HTML/PDF/player from a manifest; never launches an agent.",
+            "Collect the source logs explicitly listed in a JSON manifest, normalize and analyze "
+            "them, then generate and browser-verify report.html, report.pdf and player.html. "
+            "Uses existing reviewed annotations and pricing if the manifest supplies them; "
+            "without annotations, qualitative interpretation is labeled unavailable. Never "
+            "discovers repository sessions or launches an agent. Use for explicit exports, "
+            "custom source selections, or regeneration from a saved report manifest.",
+            "  python -m agent_session_insights run --manifest .\\review.json --output .\\review-final\n"
+            "  python -m agent_session_insights run --manifest .\\agent-session-reports\\my-project\\manifest.json --output .\\rerendered\n\n"
+            "Regeneration uses the saved manifest's frozen sources and annotations without new\n"
+            "model calls. Choose a fresh output directory; nonempty destinations are refused.",
+        ),
     ):
-        command_parser = commands.add_parser(command, help=help_text)
-        command_parser.add_argument("--manifest", type=Path, required=True)
-        command_parser.add_argument("--output", type=Path, required=True)
+        command_parser = commands.add_parser(
+            command, help=help_text, description=description,
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="Examples:\n" + example,
+        )
+        command_parser.add_argument(
+            "--manifest", type=Path, required=True,
+            help="JSON file listing source paths, harnesses and session IDs; paths resolve relative to the manifest. May include timezone, pricing and annotations.",
+        )
+        command_parser.add_argument(
+            "--output", type=Path, required=True,
+            help="Required empty destination directory; no automatic output path for this command.",
+        )
         if command == "run":
             command_parser.add_argument("--public-base-url", help="HTTPS site directory for PDF hyperlinks; HTML stays offline-compatible.")
     args = parser.parse_args()

@@ -81,6 +81,94 @@ For natural-language session selection and output-location prompts, see
 [Report on a repository](#report-on-a-repository). For all command options, see
 [Automatic Python command](#automatic-python-command).
 
+## Which command should I use?
+
+**Use `repo` for most reports.** It handles session discovery, selection, agent
+annotations and report generation in one command. `discover` lets you inspect
+the available sessions first. `prepare` and `run` are lower-level commands for
+explicit source files and staged workflows.
+
+| Command | Required input | What it produces | Agent/model calls? |
+| --- | --- | --- | --- |
+| `discover` | `--repo PATH`, or `--harness NAME --root PATH` | JSON inventory of matching sessions or source files; no report files | No |
+| `repo` | `--repo PATH` | Complete, verified HTML report, PDF and standalone player, plus supporting evidence | Yes, headlessly by default; `--noagent` disables this |
+| `prepare` | `--manifest FILE --output DIRECTORY` | Frozen private source snapshots, normalized events, coverage and measured analysis; **no HTML/PDF/player** | No |
+| `run` | `--manifest FILE --output DIRECTORY` | Complete, verified HTML/PDF/player using existing annotations if supplied | No |
+
+Use the installed Python module from any directory:
+
+```powershell
+# See what sessions are available; nothing is generated:
+python -m agent_session_insights discover --repo C:\Source\polypost
+
+# Complete report for the newest session, including headless agent review:
+python -m agent_session_insights repo --repo C:\Source\polypost
+
+# Use a specific session ID returned by discover:
+python -m agent_session_insights repo --repo C:\Source\polypost --session SESSION_ID
+
+# Combine every matching session without launching an agent:
+python -m agent_session_insights repo --repo C:\Source\polypost --all --noagent --output .\polypost-all
+```
+
+`repo` defaults to the newest session, not all sessions, and does not prompt for
+selection. Repeat `--session` to choose multiple IDs, or use `--all`.
+`--harness claude`, for example, selects only Claude histories; it does **not**
+ask Claude to review another harness's logs. For combined sessions, the first
+selected session's harness performs the review.
+
+Without `--output`, the Polypost example writes to
+**`.\agent-session-reports\polypost` under your current working directory**.
+Existing nonempty output directories are never overwritten.
+`prepare` and `run` always require an explicit `--output`.
+
+### Manifest-based and staged workflows
+
+A **manifest** is a JSON file listing exact source logs, harness names and session
+IDs, with optional timezone, date bounds, pricing and an annotations-file path.
+Source and annotation paths are relative to the manifest.
+See [Supply other sessions](#supply-other-sessions) for its format.
+
+`prepare` is useful when you want to inspect frozen evidence and write reviewed
+annotations before rendering. It does not launch a reviewer or finish the report:
+
+```powershell
+python -m agent_session_insights prepare --manifest .\review.json --output .\review-draft
+```
+
+The draft contains `collection.json`, `events.jsonl`, `analysis.json` and private
+source snapshots. Qualitative interpretation is marked pending, even if the input
+manifest contains annotations. For subsequent rendering, create a manifest that
+references those frozen snapshots and your reviewed annotations, then use `run`.
+This manual staging is optional; `repo` performs it automatically.
+
+`run` produces a complete report directly from a manifest. It never launches an
+agent: annotations must already exist, or the report labels qualitative
+interpretation unavailable. It can also regenerate a previous repository report
+using that report's saved manifest, with no new model calls:
+
+```powershell
+python -m agent_session_insights run --manifest .\agent-session-reports\polypost\manifest.json --output .\polypost-rerendered
+```
+
+Keep the original report directory intact: its manifest points to the frozen
+snapshots and annotations saved beside it. Regenerate into a different, empty
+directory.
+
+All commands accept `--help`, including command-specific examples:
+
+```powershell
+python -m agent_session_insights --help
+python -m agent_session_insights repo --help
+python -m agent_session_insights discover --help
+python -m agent_session_insights prepare --help
+python -m agent_session_insights run --help
+```
+
+The `agent-session-insights` console command accepts the same arguments.
+From a source checkout, replace `python -m agent_session_insights` with
+`python review.py`.
+
 ## Example report and embedded replay
 
 The bundled example reviews the Copilot CLI conversation that built this project.
