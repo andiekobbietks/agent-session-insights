@@ -436,10 +436,13 @@ def run_report_harness(command, cwd):
     with subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           text=True, encoding="utf-8", errors="replace", bufsize=1) as process:
         try:
+            output = []
             for line in process.stdout:
                 if line.strip():
-                    print(line.rstrip("\r\n"), flush=True)
-            return subprocess.CompletedProcess(command, process.wait())
+                    line = line.rstrip("\r\n")
+                    output.append(line)
+                    print(line, flush=True)
+            return subprocess.CompletedProcess(command, process.wait(), stdout="\n".join(output))
         except BaseException:
             process.kill()
             process.wait()
@@ -560,6 +563,14 @@ def launch_report_agent(harness, manifest, output):
                 from render import publish
             publish(output, prepared, events, analysis)
     if result.returncode:
+        if (harness == "copilot"
+                and "no supported model available" in (result.stdout or "").casefold()):
+            print(
+                "The Copilot CLI has no supported model available. Sign in to Copilot from the CLI, "
+                "then retry; if already signed in, verify that your account can access a supported model. "
+                "Use --noagent for a Python-only report without qualitative annotations.",
+                file=sys.stderr,
+            )
         print(f"{harness} exited with status {result.returncode}; report completion was not verified.", file=sys.stderr)
     return result.returncode
 
