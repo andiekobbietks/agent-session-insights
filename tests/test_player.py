@@ -816,6 +816,53 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(bar.get_attribute("aria-disabled"), "true")
         self.assertFalse(self.errors)
 
+    def test_inactive_days_can_be_elided_without_changing_event_times(self):
+        zone = ZoneInfo("America/Los_Angeles")
+        start = round(datetime(2026, 1, 1, tzinfo=zone).timestamp() * 1000)
+        day = 24 * 60 * 60 * 1000
+        self.open_player([
+            ("user", start, "First work day", "one"),
+            ("assistant", start + 12 * 60 * 60 * 1000, "First reply", "one"),
+            ("user", start + 3 * day, "Next work day", "one"),
+            ("assistant", start + 3 * day + 12 * 60 * 60 * 1000, "Next reply", "one"),
+        ], usages=[
+            {"t": start, "model": "m", "input": 100, "output": 1},
+            {"t": start + 3 * day + 12 * 60 * 60 * 1000, "model": "m", "input": 100, "output": 1},
+        ])
+        compressed_positions = self.page.locator("#timeline circle").evaluate_all(
+            "dots => dots.map(dot => Number(dot.getAttribute('cx')))")
+        compressed_state = self.state()
+        self.assertTrue(self.page.locator("#elide-inactive").is_checked())
+        self.assertEqual(compressed_state["elidedDays"], ["2026-01-02", "2026-01-03"])
+        self.assertEqual(self.page.locator(".elided-day").count(), 1)
+        self.assertTrue(self.page.locator(".time-band").evaluate_all(
+            "bands => bands.every(band => Number(band.getAttribute('width')) > 0)"))
+
+        self.page.locator("#elide-inactive").uncheck()
+        original_positions = self.page.locator("#timeline circle").evaluate_all(
+            "dots => dots.map(dot => Number(dot.getAttribute('cx')))")
+        original_state = self.state()
+        self.assertEqual(original_state["elidedDays"], [])
+        original_gap = original_positions[1] - original_positions[0]
+        compressed_gap = compressed_positions[1] - compressed_positions[0]
+        self.assertLess(compressed_gap, original_gap * 0.9)
+        self.assertEqual(compressed_state["lo"], original_state["lo"])
+        self.assertEqual(compressed_state["hi"], original_state["hi"])
+
+        self.page.locator("#elide-inactive").check()
+        self.page.evaluate("""() => {
+            const svg = document.getElementById('timeline');
+            const circle = svg.querySelectorAll('circle')[1];
+            const box = svg.getBoundingClientRect();
+            svg.dispatchEvent(new MouseEvent('click', {bubbles:true, clientX:box.left +
+                Number(circle.getAttribute('cx')) / svg.viewBox.baseVal.width * box.width,
+                clientY:box.top + 1}));
+        }""")
+        self.assertAlmostEqual(self.state()["now"], start + 3 * day, delta=1)
+        self.page.locator("#elide-inactive").uncheck()
+        self.assertEqual(self.state()["elidedDays"], [])
+        self.assertFalse(self.errors)
+
     def test_marker_drag_does_not_trigger_marker_click_and_cancel_preserves_zoom(self):
         start = 1794071182211
         self.open_player([

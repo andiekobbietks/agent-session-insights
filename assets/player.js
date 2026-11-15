@@ -24,6 +24,7 @@ const stamp=t=>fmtStamp.format(t)+' '+zone(t);
 let now=D.meta.start,lo=now,hi=D.meta.end,scopeLo=lo,scopeHi=hi;
 let humans=[],usage=[],marked=[],viewMessages=[],allMessages=[],selected=null,current=null,focusedId=null;
 let timelineDrag=null,suppressTimelineClick=false,syncedScrollLeft=0;
+let elidedDays=[],elidedGroups=[];
 const eventButtons=new Map(),humanDots=new Map();
 const eventGeometry=new Map();
 const responseNodes=new Map();
@@ -61,6 +62,7 @@ function rebuild(reset=true){
   const session=(D.sessions||[]).find(s=>JSON.stringify([s.tool,s.session])===$('session').value);
   scopeLo=day?day.start:D.meta.start;scopeHi=day?day.end:D.meta.end;
   if(!day&&session?.lo!==null&&session?.lo!==undefined){scopeLo=session.lo;scopeHi=session.hi;}
+  updateElidedDays();
   if(reset){lo=scopeLo;hi=scopeHi;}
   humans=H.filter(scoped);usage=U.filter(scoped);marked=humans.filter(h=>h.moment);
   viewMessages=messages.filter(scoped);allMessages=messages.filter(scopeMatch);
@@ -95,30 +97,35 @@ function adjacentPrompt(direction){
 function stepPrompt(direction){const candidate=adjacentPrompt(direction);if(candidate)jumpMessage(candidate);}
 function nextIdea(){const rows=H.filter(scopeMatch).filter(h=>h.moment);const h=rows.find(h=>h.t>now)||rows[0];if(h)jumpMessage(h);}
 function zoom(factor){
-  const width=Math.min(scopeHi-scopeLo,Math.max(1000,(hi-lo)*factor));
-  lo=Math.max(scopeLo,Math.min(scopeHi-width,now-width/2));hi=lo+width;rebuild(false);
+  const scaleLo=scaleTime(scopeLo),scaleHi=scaleTime(scopeHi),currentWidth=scaleTime(hi)-scaleTime(lo);
+  const width=Math.min(scaleHi-scaleLo,Math.max(1000,currentWidth*factor));
+  const start=Math.max(scaleLo,Math.min(scaleHi-width,scaleTime(now)-width/2));
+  lo=timeAtScale(start,scopeLo,scopeHi);hi=timeAtScale(start+width,scopeLo,scopeHi);rebuild(false);
 }
 function pan(direction){
-  const width=hi-lo;
-  lo=Math.max(scopeLo,Math.min(scopeHi-width,lo+direction*width/2));hi=lo+width;
+  const scaleLo=scaleTime(scopeLo),scaleHi=scaleTime(scopeHi),width=scaleTime(hi)-scaleTime(lo);
+  const start=Math.max(scaleLo,Math.min(scaleHi-width,scaleTime(lo)+direction*width/2));
+  lo=timeAtScale(start,scopeLo,scopeHi);hi=timeAtScale(start+width,scopeLo,scopeHi);
   focusedId=null;now=Math.max(lo,Math.min(hi,now));rebuild(false);
 }
 function syncTimelineScrollbar(){
   const bar=$('timeline-scroll'),track=$('timeline-scroll-track');
   if(D.meta.start===null){bar.setAttribute('aria-disabled','true');return;}
-  const available=Math.max(0,scopeHi-scopeLo-(hi-lo));
+  const scaleLo=scaleTime(scopeLo),scaleHi=scaleTime(scopeHi),width=scaleTime(hi)-scaleTime(lo);
+  const available=Math.max(0,scaleHi-scaleLo-width);
   bar.hidden=available===0;
-  const ratio=Math.max(1,(scopeHi-scopeLo)/Math.max(1,hi-lo));
+  const ratio=Math.max(1,(scaleHi-scaleLo)/Math.max(1,width));
   track.style.width=Math.max(bar.clientWidth+(available>0?1:0),Math.min(10000000,bar.clientWidth*ratio))+'px';
   bar.setAttribute('aria-disabled',String(available===0));
-  bar.scrollLeft=available?(lo-scopeLo)/available*(bar.scrollWidth-bar.clientWidth):0;
+  bar.scrollLeft=available?(scaleTime(lo)-scaleLo)/available*(bar.scrollWidth-bar.clientWidth):0;
   syncedScrollLeft=bar.scrollLeft;
 }
 function scrollTimeline(){
   const bar=$('timeline-scroll'),maxScroll=bar.scrollWidth-bar.clientWidth;
   if(maxScroll<=0||Math.abs(bar.scrollLeft-syncedScrollLeft)<.5)return;
-  const width=hi-lo;
-  lo=scopeLo+(bar.scrollLeft/maxScroll)*(scopeHi-scopeLo-width);hi=lo+width;
+  const scaleLo=scaleTime(scopeLo),scaleHi=scaleTime(scopeHi),width=scaleTime(hi)-scaleTime(lo);
+  const start=scaleLo+(bar.scrollLeft/maxScroll)*(scaleHi-scaleLo-width);
+  lo=timeAtScale(start,scopeLo,scopeHi);hi=timeAtScale(start+width,scopeLo,scopeHi);
   focusedId=null;now=Math.max(lo,Math.min(hi,now));rebuild(false);
 }
 function timelineX(event){
@@ -145,7 +152,7 @@ function moveTimelineDrag(event){
   selection.setAttribute('x',Math.min(drag.start,drag.end));
   selection.setAttribute('width',Math.abs(drag.end-drag.start));
   selection.setAttribute('height',Math.max(1,$('timeline').viewBox.baseVal.height-71));
-  const time=x=>drag.lo+(x-X0)/(X1-X0)*(drag.hi-drag.lo);
+  const time=x=>timeAtFraction((x-X0)/(X1-X0),drag.lo,drag.hi);
   text('zoom-status',`Release to zoom · ${fmtTime.format(time(Math.min(drag.start,drag.end)))} – ${fmtTime.format(time(Math.max(drag.start,drag.end)))}`);
 }
 function finishTimelineDrag(event,cancelled=false){
@@ -156,7 +163,7 @@ function finishTimelineDrag(event,cancelled=false){
   suppressTimelineClick=true;
   if(!cancelled){
     drag.end=timelineX(event);
-    const time=x=>drag.lo+(x-X0)/(X1-X0)*(drag.hi-drag.lo);
+    const time=x=>timeAtFraction((x-X0)/(X1-X0),drag.lo,drag.hi);
     const start=time(Math.min(drag.start,drag.end)),end=time(Math.max(drag.start,drag.end));
     const width=Math.min(scopeHi-scopeLo,Math.max(1000,end-start));
     lo=Math.max(scopeLo,Math.min(scopeHi-width,(start+end-width)/2));hi=lo+width;
@@ -166,7 +173,7 @@ function finishTimelineDrag(event,cancelled=false){
 }
 function render(){
   text('clock',fmtTime.format(now)+' '+zone(now));text('date',fmtDate.format(now));
-  $('scrub').value=String(Math.round((now-lo)/Math.max(1,hi-lo)*100000));$('scrub').setAttribute('aria-valuetext',stamp(now));
+  $('scrub').value=String(Math.round((scaleTime(now)-scaleTime(lo))/Math.max(1,scaleTime(hi)-scaleTime(lo))*100000));$('scrub').setAttribute('aria-valuetext',stamp(now));
   const old=current?.id;
   current=viewMessages.find(r=>r.id===focusedId&&r.t===now)||viewMessages[lastAt(viewMessages,now)]||null;
   selected=current?.role==='user'?current:inputByResponse.get(current?.id)||null;
@@ -331,7 +338,50 @@ function initializeUsage(){
   }
   renderUsage();
 }
-function xAt(t){return X0+(t-lo)/Math.max(1,hi-lo)*(X1-X0);}
+function updateElidedDays(){
+  if(!$('elide-inactive').checked){elidedDays=[];elidedGroups=[];return;}
+  const active=D.days.map(day=>[...H,...U,...UP].some(row=>row.t>=day.start&&row.t<=day.end&&filterMatch(row)));
+  elidedDays=D.days.filter((day,index)=>!active[index]);
+  elidedGroups=[];
+  for(let i=0;i<D.days.length;){
+    if(active[i]){i++;continue;}
+    const first=i;
+    while(i+1<D.days.length&&!active[i+1])i++;
+    const last=i++;
+    elidedGroups.push({start:D.days[first].start,end:D.days[last].end,label:first===last?D.days[first].label:`${D.days[first].label} – ${D.days[last].label}`});
+  }
+}
+function scaleTime(t){
+  let removed=0;
+  for(const day of elidedDays){
+    const end=day.end+1;
+    if(t<=day.start)break;
+    if(t<end)return day.start-removed;
+    removed+=end-day.start;
+  }
+  return t-removed;
+}
+function timeAtScale(value,min,max){
+  const scaleSpan=scaleTime(max)-scaleTime(min);
+  const tolerance=scaleSpan/Math.max(1,X1-X0);
+  const boundary=elidedGroups.find(day=>Math.abs(value-scaleTime(day.end+1))<=tolerance);
+  if(boundary)return Math.min(max,boundary.end+1);
+  let left=min,right=max;
+  for(let i=0;i<48;i++){
+    const middle=(left+right)/2;
+    if(scaleTime(middle)<value)left=middle;else right=middle;
+  }
+  let result=Math.max(min,Math.min(max,right));
+  const gap=elidedGroups.find(day=>result>=day.start&&result<day.end+1);
+  if(gap)result=Math.min(max,gap.end+1);
+  return result;
+}
+function timeAtFraction(fraction,min=lo,max=hi){
+  const start=scaleTime(min),end=scaleTime(max);
+  if(end<=start)return min+(max-min)*fraction;
+  return timeAtScale(start+Math.max(0,Math.min(1,fraction))*(end-start),min,max);
+}
+function xAt(t){return X0+(scaleTime(t)-scaleTime(lo))/Math.max(1,scaleTime(hi)-scaleTime(lo))*(X1-X0);}
 function drawTimeline(){
   const svg=$('timeline');svg.replaceChildren();
   W=Math.max(600,svg.clientWidth);X1=W-20;
@@ -344,9 +394,16 @@ function drawTimeline(){
   svg.append(make('rect',{x:X0,y:22,width:X1-X0,height:bottom-22,fill:'#f6f8fa',rx:4}));
   for(const period of D.day_night||[]){
     const start=Math.max(lo,period.start),end=Math.min(hi,period.end);if(end<=start)continue;
-    const band=make('rect',{x:xAt(start),y:22,width:xAt(end)-xAt(start),height:bottom-22,
+    const xStart=xAt(start),xEnd=xAt(end);if(xEnd<=xStart)continue;
+    const band=make('rect',{x:xStart,y:22,width:xEnd-xStart,height:bottom-22,
       class:`time-band ${period.kind==='day'?'timeline-day':'timeline-night'}`,'data-start':start,'data-end':end});
     band.append(make('title',{},`${period.kind==='day'?'Daytime':'Nighttime'} · ${stamp(start)} – ${stamp(end)}`));svg.append(band);
+  }
+  for(const day of elidedGroups){
+    if(day.end<lo||day.start>hi)continue;
+    const x=xAt(Math.max(lo,Math.min(hi,day.start)));
+    const marker=make('line',{x1:x,x2:x,y1:22,y2:bottom,stroke:'#8194a2','stroke-width':1.5,'stroke-dasharray':'3 4',class:'elided-day'});
+    marker.append(make('title',{},`Inactive day${day.label.includes(' – ')?'s':''} elided · ${day.label}`));svg.append(marker);
   }
   for(const c of D.clusters){
     const members=c.inputs.map(id=>H.find(h=>h.id===id)).filter(scoped);if(members.length<2)continue;
@@ -355,7 +412,7 @@ function drawTimeline(){
   }
   for(const [label,y]of lanes){svg.append(make('text',{x:5,y:y+4,'font-size':12,fill:'#526d80'},label));svg.append(make('line',{x1:X0,x2:X1,y1:y,y2:y,stroke:'#e0e7ec'}));}
   for(let i=0;i<7;i++){
-    const t=lo+(hi-lo)*i/6,x=xAt(t);
+    const t=timeAtFraction(i/6),x=xAt(t);
     const label=hi-lo>=86400000?fmtStamp.format(t):hi-lo<300000?fmtTime.format(t):fmtHour.format(t);
     svg.append(make('line',{x1:x,x2:x,y1:24,y2:bottom,stroke:'#d6e0e7','stroke-dasharray':'3 4'}));
     svg.append(make('text',{x,y:axis,class:'axis-label','font-size':12,fill:'#526d80','text-anchor':i===0?'start':i===6?'end':'middle'},label));
@@ -464,6 +521,7 @@ initializeUsage();
 $('undated-select').addEventListener('change',showUndated);$('search').addEventListener('input',renderEvents);
 $('prev-text').addEventListener('click',()=>stepPrompt(-1));$('next-text').addEventListener('click',()=>stepPrompt(1));
 for(const id of ['day','harness'])$(id).addEventListener('change',()=>{if(id==='harness')$('session').value='all';focusedId=null;rebuild();});
+$('elide-inactive').addEventListener('change',()=>rebuild());
 $('session').addEventListener('change',()=>{$('day').value='all';focusedId=null;const session=(D.sessions||[]).find(s=>JSON.stringify([s.tool,s.session])===$('session').value);$('harness').value=session?.tool||'all';if(session?.lo!==null&&session?.lo!==undefined)now=session.lo;rebuild();});
 if(D.meta.start!==null){
   $('start').addEventListener('click',()=>jump(lo));$('end').addEventListener('click',()=>jump(hi));
@@ -471,7 +529,7 @@ if(D.meta.start!==null){
   $('next-idea').addEventListener('click',nextIdea);$('zoom-in').addEventListener('click',()=>zoom(.5));$('zoom-out').addEventListener('click',()=>zoom(2));
   $('zoom-reset').addEventListener('click',()=>rebuild());
   $('pan-prev').addEventListener('click',()=>pan(-1));$('pan-next').addEventListener('click',()=>pan(1));
-  $('scrub').addEventListener('input',()=>jump(lo+Number($('scrub').value)/100000*(hi-lo)));
+  $('scrub').addEventListener('input',()=>jump(timeAtFraction(Number($('scrub').value)/100000)));
   $('timeline').addEventListener('pointerdown',beginTimelineDrag);
   $('timeline').addEventListener('pointermove',moveTimelineDrag);
   $('timeline').addEventListener('pointerup',event=>finishTimelineDrag(event));
@@ -480,7 +538,7 @@ if(D.meta.start!==null){
   $('timeline').addEventListener('click',event=>{if(suppressTimelineClick){suppressTimelineClick=false;event.preventDefault();event.stopImmediatePropagation();}},true);
   $('timeline-scroll').addEventListener('scroll',scrollTimeline);
   window.addEventListener('resize',()=>{drawTimeline();syncTimelineScrollbar();eventScopeKey=null;renderEvents();});
-  $('timeline').addEventListener('click',event=>{const box=$('timeline').getBoundingClientRect(),x=(event.clientX-box.left)/box.width*W;if(x>=X0&&x<=X1)jump(lo+(x-X0)/(X1-X0)*(hi-lo));});
+  $('timeline').addEventListener('click',event=>{const box=$('timeline').getBoundingClientRect(),x=(event.clientX-box.left)/box.width*W;if(x>=X0&&x<=X1)jump(timeAtFraction((x-X0)/(X1-X0)));});
   document.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea,button,summary,.turn-content,#timeline-scroll,#event-list,#moments,#clusters'))return;if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();jump(now+(e.key==='ArrowRight'?1:-1)*5*60000);}else if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();stepInput(e.key==='ArrowDown'?1:-1);}});
   rebuild();
 }else{
@@ -493,7 +551,7 @@ if(D.meta.start!==null){
   syncTimelineScrollbar();
 }
 window.vennPlayback={
-  state:()=>({now,lo,hi,scopeLo,scopeHi,selected:selected?.id||null,message:current?.id||null,visibleHumanInputs:humans.length,visibleModelEvents:usage.length}),
+  state:()=>({now,lo,hi,scopeLo,scopeHi,selected:selected?.id||null,message:current?.id||null,visibleHumanInputs:humans.length,visibleModelEvents:usage.length,elidedDays:elidedDays.map(day=>day.date)}),
   jumpToInput:id=>{const row=H.find(r=>r.id===id);if(row)jumpMessage(row);},
   jumpToMessage:id=>{const row=[...messages,...D.undated].find(r=>r.id===id);if(row)jumpMessage(row);}
 };

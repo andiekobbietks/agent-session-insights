@@ -615,6 +615,7 @@ class DiscoveryTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             result = run_report_harness(command, cwd=self.root)
         self.assertEqual(result.returncode, 7)
+        self.assertEqual(result.stdout, "  first message  \nsecond message\nwarning\nlast message")
         self.assertEqual(output.getvalue(), "  first message  \nsecond message\nwarning\nlast message\n")
 
     def test_default_launches_each_harness_with_selected_sources_and_reviewer_prompt(self):
@@ -753,12 +754,14 @@ class DiscoveryTests(unittest.TestCase):
         self.source("copilot", "selected")
         output = self.root / "incomplete"
         with (patch("review.shutil.which", return_value="copilot.exe"),
-              patch("review.run_report_harness", return_value=subprocess.CompletedProcess([], 7)),
+              patch("review.run_report_harness", return_value=subprocess.CompletedProcess(
+                  [], 7, stdout="Error: No supported model available")),
               patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo), "--output", str(output)]),
               contextlib.redirect_stdout(io.StringIO()) as stdout,
-              contextlib.redirect_stderr(io.StringIO())):
+              contextlib.redirect_stderr(io.StringIO()) as stderr):
             self.assertEqual(main(), 7)
         self.assertNotIn("Verified review:", stdout.getvalue())
+        self.assertIn("Sign in to Copilot from the CLI", stderr.getvalue())
         with (patch("review.shutil.which", return_value="copilot.exe"),
               patch("review.run_report_harness", return_value=subprocess.CompletedProcess([], 0))):
             with self.assertRaises(SystemExit):
