@@ -1,13 +1,15 @@
 import json
+from datetime import datetime
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from zoneinfo import ZoneInfo
 
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from render import payload, player_html
+from render import payload, player_html, report_html
 from review import analyze
 
 PRICING = {
@@ -53,6 +55,7 @@ class PlayerTests(unittest.TestCase):
         if pricing is not None:
             collection["pricing"] = {"card": pricing}
         analysis = analyze(collection, events, {"summary": "Test", "decisions": list(decisions)})
+        self.events, self.analysis = events, analysis
         data = payload(events, analysis)
         path = Path(self.directory.name) / "player.html"
         path.write_text(player_html(data), encoding="utf-8")
@@ -94,21 +97,23 @@ class PlayerTests(unittest.TestCase):
                     self.assertEqual(frame.locator("#update-title").inner_text(), "Agent responses (2)")
                     self.assertIn("R002", frame.locator(".response-meta").first.inner_text())
                     self.assertIn("S01:5", frame.locator(".response-meta").last.inner_text())
-                    self.assertTrue(frame.locator("#agent-text").evaluate("el=>el.scrollHeight>el.clientHeight"))
+                    self.assertTrue(frame.locator(".turn-content").evaluate("el=>el.scrollHeight>el.clientHeight"))
+                    self.assertFalse(frame.locator("#agent-text").evaluate("el=>el.scrollHeight>el.clientHeight"))
                     before = frame.evaluate(geometry)
                     frame.locator(".agent-response").first.evaluate("el=>el.dataset.cached='kept'")
                     frame.evaluate("window.vennPlayback.jumpToMessage('R005')")
                     self.assertEqual(frame.locator(".agent-response.active").get_attribute("data-id"), "R005")
                     self.assertEqual(frame.locator(".agent-response").first.get_attribute("data-cached"), "kept")
                     self.assertEqual(responses.all_text_contents(), ["First reply", last_reply])
-                    self.assertGreater(frame.locator("#agent-text").evaluate("el=>el.scrollTop"), 0)
+                    self.assertGreater(frame.locator(".turn-content").evaluate("el=>el.scrollTop"), 0)
+                    self.assertEqual(frame.locator("#agent-text").evaluate("el=>el.scrollTop"), 0)
                     self.assertEqual(frame.evaluate(geometry), before)
                     frame.evaluate("window.vennPlayback.jumpToMessage('H006')")
                     self.assertEqual(responses.all_text_contents(), ["Next turn reply"])
                     self.assertEqual(frame.evaluate(geometry), before)
                     frame.evaluate("window.vennPlayback.jumpToMessage('H001')")
                     self.assertEqual(responses.all_text_contents(), ["First reply", last_reply])
-                    self.assertEqual(frame.locator("#agent-text").evaluate("el=>el.scrollTop"), 0)
+                    self.assertEqual(frame.locator(".turn-content").evaluate("el=>el.scrollTop"), 0)
                     self.assertEqual(frame.evaluate(geometry), before)
         self.assertFalse(self.errors)
 
@@ -127,17 +132,15 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(replies.all_text_contents(), [hostile, "Second reply"])
         self.assertIsNone(self.page.evaluate("window.pwned"))
         self.assertIn("Timestamp unavailable", self.page.locator(".response-meta").first.inner_text())
-        self.page.locator("#next-text").click()
-        self.page.locator("#next-text").click()
+        self.page.evaluate("window.vennPlayback.jumpToMessage('R003')")
         self.assertEqual(replies.all_text_contents(), [hostile, "Second reply"])
         self.assertEqual(self.page.locator(".agent-response.active").get_attribute("data-id"), "R003")
         self.page.locator("#session").select_option('["Cursor","two"]')
         self.assertEqual(replies.all_text_contents(), ["Other reply"])
         self.page.locator("#session").select_option('["Cursor","one"]')
         self.assertEqual(replies.all_text_contents(), [hostile, "Second reply"])
-        self.assertEqual(self.page.locator("#message-number").inner_text(), "1 of 5")
-        for _ in range(3):
-            self.page.locator("#next-text").click()
+        self.assertEqual(self.page.locator("#message-number").inner_text(), "1 of 2")
+        self.page.locator("#next-text").click()
         self.assertEqual(replies.all_text_contents(), ["Next turn reply"])
         self.assertEqual(self.page.locator("#human-text").inner_text(), "Next input")
         self.assertFalse(self.errors)
@@ -214,6 +217,44 @@ class PlayerTests(unittest.TestCase):
         self.page.evaluate("window.vennPlayback.jumpToMessage('H001')")
         self.assertEqual(self.page.locator("#event-list").evaluate("(el) => el.scrollTop"), 0)
         self.assertFalse(self.errors)
+
+    def test_session_log_scrolls_independently_with_wheel_and_keyboard(self):
+        start = 1794071182211
+        for width in (1280, 390):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 900})
+                self.open_player([
+                    (role, start + i * 1000, f"Message {i}", "one")
+                    for i, role in enumerate(["user", "assistant"] * 12)
+                ])
+                self.page.evaluate("""() => {
+                    const spacer = document.createElement('div');
+                    spacer.style.height = '100vh';
+                    document.body.append(spacer);
+                }""")
+                log = self.page.get_by_role("region", name="Full session log", exact=True)
+                self.assertTrue(log.evaluate("el => el.scrollHeight > el.clientHeight"))
+                self.assertLessEqual(log.evaluate("el => el.clientHeight"), 360)
+                log.scroll_into_view_if_needed()
+                log.hover()
+                before = self.page.evaluate("({scroll:scrollY,search:document.getElementById('search').getBoundingClientRect().top})")
+                self.page.mouse.wheel(0, 150)
+                self.page.wait_for_function("document.getElementById('event-list').scrollTop > 0")
+                self.assertEqual(self.page.evaluate("scrollY"), before["scroll"])
+                self.assertEqual(self.page.locator("#search").bounding_box()["y"], before["search"])
+                log.focus()
+                log.evaluate("el => el.scrollTop = 0")
+                state = self.state()
+                self.page.keyboard.press("ArrowDown")
+                self.page.wait_for_function("document.getElementById('event-list').scrollTop > 0")
+                self.assertEqual(self.state(), state)
+                log.evaluate("el => el.scrollTop = el.scrollHeight")
+                log.hover()
+                outer_scroll = self.page.evaluate("scrollY")
+                self.page.mouse.wheel(0, 200)
+                self.page.wait_for_timeout(200)
+                self.assertEqual(self.page.evaluate("scrollY"), outer_scroll)
+                self.assertFalse(self.errors)
 
     def test_selecting_log_row_preserves_list_scroll_even_when_zoom_repositions(self):
         start = 1794071182211
@@ -299,6 +340,39 @@ class PlayerTests(unittest.TestCase):
         self.assertLess(self.page.locator(".activity").bounding_box()["y"], 844)
         self.assertFalse(self.errors)
 
+    def test_day_and_night_bands_follow_local_time_dst_and_zoom(self):
+        zone = ZoneInfo("America/Los_Angeles")
+        for month, day, morning_hours in ((3, 8, 5), (11, 1, 7)):
+            with self.subTest(month=month):
+                start = round(datetime(2026, month, day, tzinfo=zone).timestamp() * 1000)
+                finish = round(datetime(2026, month, day + 1, tzinfo=zone).timestamp() * 1000)
+                data = self.open_player([
+                    ("user", start, "Midnight input", "one"),
+                    ("assistant", finish, "Next midnight reply", "one"),
+                ])
+                bands = data["day_night"]
+                self.assertEqual([band["kind"] for band in bands], ["night", "day", "night"])
+                self.assertEqual([(band["end"] - band["start"]) / 3600000 for band in bands],
+                                 [morning_hours, 12, 6])
+                self.assertIn("Day 06:00–18:00", self.page.locator(".legend").inner_text())
+                self.assertIn("America/Los_Angeles", self.page.locator(".legend").inner_text())
+                for action in (None, "#zoom-in", "#pan-next", "#zoom-reset"):
+                    if action:
+                        self.page.locator(action).click()
+                    state = self.state()
+                    visible = self.page.locator(".time-band").evaluate_all("""bands => bands.map(band => ({
+                        start:Number(band.dataset.start), end:Number(band.dataset.end),
+                        width:Number(band.getAttribute('width')), pointerEvents:getComputedStyle(band).pointerEvents
+                    }))""")
+                    self.assertEqual(visible[0]["start"], state["lo"])
+                    self.assertEqual(visible[-1]["end"], state["hi"])
+                    for i, band in enumerate(visible):
+                        self.assertGreater(band["width"], 0)
+                        self.assertEqual(band["pointerEvents"], "none")
+                        if i:
+                            self.assertEqual(band["start"], visible[i - 1]["end"])
+                self.assertFalse(self.errors)
+
     def test_embedded_player_hides_duplicate_header_and_footer(self):
         start = 1794071182211
         self.open_player([("user", start, "Prompt", "one")])
@@ -308,8 +382,131 @@ class PlayerTests(unittest.TestCase):
         frame = self.page.frame_locator("iframe")
         self.assertFalse(frame.locator("header").is_visible())
         self.assertFalse(frame.locator("footer").is_visible())
+        self.assertFalse(frame.locator(".browse").is_visible())
         self.assertTrue(frame.locator(".activity").is_visible())
         self.assertFalse(self.errors)
+
+    def test_report_session_log_is_a_separate_pane_and_navigates_replay(self):
+        start = 1794071182211
+        self.open_player([
+            (role, start + i * 1000, f"Message {i}", "one")
+            for i, role in enumerate(["user", "assistant"] * 12)
+        ] + [("user", None, "Undated prompt", "one"),
+             ("assistant", None, "Undated reply", "one")])
+        collection = {"title": "Player test", "timezone": "America/Los_Angeles",
+                      "sources": [], "missing_harnesses": {}, "warnings": []}
+        report = Path(self.directory.name) / "report.html"
+        report.write_text(report_html(collection, self.events, self.analysis), encoding="utf-8")
+        for width in (1280, 390):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 900})
+                self.page.goto(report.as_uri(), wait_until="networkidle")
+                replay = next(frame for frame in self.page.frames if frame.url.endswith("/player.html"))
+                log = next(frame for frame in self.page.frames if frame.url.endswith("?view=log"))
+                self.assertEqual(self.page.locator("#session-log").evaluate("el => el.parentElement.tagName"), "MAIN")
+                self.assertEqual(self.page.locator("#session-log").evaluate("el => el.previousElementSibling.id"), "playback")
+                self.assertFalse(replay.locator(".browse").is_visible())
+                self.assertFalse(log.locator(".workspace").is_visible())
+                self.assertFalse(log.locator(".deck").is_visible())
+                self.assertFalse(log.locator("#search").is_visible())
+                search = self.page.get_by_role("searchbox", name="Search full session log")
+                self.assertTrue(search.is_visible())
+                if width == 1280:
+                    heading = self.page.locator("#session-log h2").bounding_box()
+                    self.assertLess(abs(search.bounding_box()["y"] - heading["y"]), 15)
+                self.assertEqual(log.locator(".event-row").count(), 26)
+                self.assertTrue(log.locator("#event-list").evaluate("el => el.scrollHeight > el.clientHeight"))
+                self.assertTrue(log.evaluate("document.documentElement.scrollHeight <= innerHeight"))
+                self.assertTrue(log.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+                self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+                search.fill("R022")
+                log.wait_for_function("document.querySelectorAll('.event-row').length === 1", polling=100)
+                self.assertEqual(log.locator(".event-row").count(), 1)
+                log.locator(".event-row").click()
+                replay.wait_for_function("window.vennPlayback.state().message === 'R022'", polling=100)
+                replay.locator("#next-text").click()
+                log.wait_for_function("window.vennPlayback.state().message === 'H023'", polling=100)
+                self.assertEqual(search.input_value(), "R022")
+                search.fill("")
+                log.wait_for_function("document.querySelectorAll('.event-row').length === 26", polling=100)
+                self.assertEqual(log.locator(".event-row.active").get_attribute("data-id"), "H023")
+                search.fill("Undated reply")
+                log.wait_for_function("document.querySelectorAll('.event-row').length === 1", polling=100)
+                log.locator(".event-row").click()
+                replay.wait_for_function("window.vennPlayback.state().message === 'R026'", polling=100)
+                self.page.emulate_media(media="print")
+                self.assertFalse(self.page.locator(".session-log-frame").is_visible())
+                self.page.emulate_media(media="screen")
+                self.assertFalse(self.errors)
+
+    def test_replay_has_one_scrollbar_per_pane_and_no_iframe_scrollbar(self):
+        start = 1794071182211
+        rows = [
+            (role, start + (i // 4) * 7200000 + (i % 4) * 1000,
+             ("Long message\n" * 500) if i < 2 else f"Message {i}", "one")
+            for i, role in enumerate(["user", "assistant"] * 40)
+        ]
+        decisions = [{"input": f"H{i+1:03d}", "title": f"Direction {i}", "category": "Scope",
+                      "analysis": "Recorded direction"} for i in range(0, 80, 2)]
+        self.open_player(rows, decisions=decisions)
+        collection = {"title": "Player test", "timezone": "America/Los_Angeles",
+                      "sources": [], "missing_harnesses": {}, "warnings": []}
+        report = Path(self.directory.name) / "report.html"
+        report.write_text(report_html(collection, self.events, self.analysis), encoding="utf-8")
+        for width in (1280, 390):
+            with self.subTest(width=width):
+                self.page.set_viewport_size({"width": width, "height": 900})
+                self.page.goto(report.as_uri(), wait_until="networkidle")
+                replay = next(frame for frame in self.page.frames if frame.url.endswith("/player.html"))
+                replay.wait_for_function("document.documentElement.scrollHeight <= innerHeight")
+                self.page.locator(".playback-frame").scroll_into_view_if_needed()
+                scrollable = replay.locator(".workspace *").evaluate_all("""elements => elements.filter(el =>
+                    /^(auto|scroll)$/.test(getComputedStyle(el).overflowY) &&
+                    el.scrollHeight > el.clientHeight
+                ).map(el => el.matches('.turn-content') ? 'turns' : el.matches('aside') ? 'directions' : el.id || el.className)""")
+                self.assertEqual(scrollable, ["turns", "moments", "clusters"])
+                self.assertEqual(replay.locator("aside").evaluate("el => el.scrollTop"), 0)
+                replay.evaluate("window.vennPlayback.jumpToMessage('R002')")
+                self.assertGreater(replay.locator(".turn-content").evaluate("el => el.scrollTop"), 0)
+                self.assertEqual(replay.locator("#agent-text").evaluate("el => el.scrollTop"), 0)
+                self.assertTrue(replay.locator(".text-controls").evaluate("""el => {
+                    const pane = el.closest('.activity').getBoundingClientRect(), controls = el.getBoundingClientRect();
+                    const content = el.nextElementSibling.getBoundingClientRect();
+                    return controls.top >= pane.top && controls.bottom <= content.top && content.bottom <= pane.bottom;
+                }"""))
+                heading_top = replay.locator(".text-controls").bounding_box()["y"]
+                replay.locator(".turn-content").evaluate("el => el.scrollTop = el.scrollHeight")
+                self.assertEqual(replay.locator(".text-controls").bounding_box()["y"], heading_top)
+                self.assertEqual(replay.locator(".activity").evaluate("el => el.scrollTop"), 0)
+                keyboard_state = replay.evaluate("window.vennPlayback.state()")
+                replay.locator(".turn-content").focus()
+                replay.locator(".turn-content").press("ArrowUp")
+                self.assertEqual(replay.evaluate("window.vennPlayback.state()"), keyboard_state)
+                state = replay.evaluate("window.vennPlayback.state()")
+                for region, other in (("moments", "clusters"), ("clusters", "moments")):
+                    region_locator = replay.locator(f"#{region}")
+                    region_locator.focus()
+                    heading = region_locator.evaluate("el => el.parentElement.querySelector('h2').getBoundingClientRect().top")
+                    other_scroll = replay.locator(f"#{other}").evaluate("el => el.scrollTop")
+                    region_locator.evaluate("""el => {
+                        delete el.dataset.scrollEnded;
+                        el.addEventListener('scrollend', () => el.dataset.scrollEnded = 'true', {once:true});
+                    }""")
+                    region_locator.press("ArrowDown")
+                    replay.wait_for_function("(id) => document.getElementById(id).scrollTop > 0", arg=region)
+                    replay.wait_for_function("(id) => document.getElementById(id).dataset.scrollEnded === 'true'", arg=region)
+                    self.assertEqual(replay.locator(f"#{other}").evaluate("el => el.scrollTop"), other_scroll)
+                    self.assertEqual(region_locator.evaluate("el => el.parentElement.querySelector('h2').getBoundingClientRect().top"), heading)
+                    self.assertEqual(replay.evaluate("window.vennPlayback.state()"), state)
+                    self.assertEqual(replay.locator("aside").evaluate("el => el.scrollTop"), 0)
+                before = replay.evaluate("innerHeight")
+                replay.locator("#usage-details").evaluate("el => el.open = true")
+                replay.wait_for_function("(height) => innerHeight > height", arg=before)
+                replay.wait_for_function("document.documentElement.scrollHeight <= innerHeight")
+                replay.locator("#usage-details").evaluate("el => el.open = false")
+                replay.wait_for_function("(height) => innerHeight === height", arg=before)
+                self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+                self.assertFalse(self.errors)
 
     def test_undated_session_filter_scopes_log_and_message_navigation(self):
         self.open_player([
@@ -324,7 +521,6 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(self.page.locator("#human-text").inner_text(), "Second undated input")
         self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Second undated reply")
         self.assertTrue(self.page.locator("#prev-text").is_disabled())
-        self.page.locator("#next-text").click()
         self.assertTrue(self.page.locator("#next-text").is_disabled())
         self.assertFalse(self.errors)
 
@@ -352,7 +548,7 @@ class PlayerTests(unittest.TestCase):
                           for i, role in enumerate(["user", "assistant"] * 38)])
         self.page.evaluate("window.vennPlayback.jumpToMessage('H021')")
         self.assertEqual(self.page.locator(".text-controls h2").inner_text(), "Session turns")
-        self.assertEqual(self.page.locator("#message-number").inner_text(), "21 of 76")
+        self.assertEqual(self.page.locator("#message-number").inner_text(), "11 of 38")
         for width in (1280, 390):
             self.page.set_viewport_size({"width": width, "height": 900})
             boxes = self.page.evaluate("""() =>
@@ -381,6 +577,7 @@ class PlayerTests(unittest.TestCase):
             ("user", start, "First request", "one"),
             ("assistant", start + 30000, "Response", "one"),
             ("user", start + 60000, "Next request", "one"),
+            ("user", start + 120000, "Last request", "one"),
         ], decisions=[{"input": "H001", "title": "First direction", "category": "Scope", "analysis": "Fixture"}])
         for selector in ("#next-text", "#next-idea", "#next"):
             button = self.page.locator(selector)
@@ -425,7 +622,8 @@ class PlayerTests(unittest.TestCase):
         arrows = self.page.locator(".text-arrows").bounding_box()
         self.assertAlmostEqual(arrows["x"] + arrows["width"], controls["x"] + controls["width"], delta=1)
         self.page.locator("#next-text").click()
-        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "First response")
+        self.assertEqual(self.state()["message"], "H003")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Final response")
         self.page.locator("#prev-text").click()
         self.assertEqual(self.state()["message"], "H001")
         width = self.state()["hi"] - self.state()["lo"]
@@ -468,12 +666,10 @@ class PlayerTests(unittest.TestCase):
             }"""))
 
         self.page.locator("#next-text").click()
-        assert_cursor(start + 30000)
-        self.page.locator("#next-text").click()
         assert_cursor(start + 5400000)
         self.assertGreater(self.page.locator(".timeline-viewport").evaluate("(el) => el.scrollLeft"), 0)
         self.page.locator("#prev-text").click()
-        assert_cursor(start + 30000)
+        assert_cursor(start)
         self.page.locator("#zoom-in").click()
         width = self.state()["hi"] - self.state()["lo"]
         self.page.locator("#next-text").click()
@@ -481,8 +677,104 @@ class PlayerTests(unittest.TestCase):
         self.assertGreater(self.state()["lo"], start)
         self.assertEqual(self.state()["hi"] - self.state()["lo"], width)
         self.page.locator("#prev-text").click()
-        assert_cursor(start + 30000)
+        assert_cursor(start)
         self.assertEqual(self.state()["lo"], start)
+        self.assertFalse(self.errors)
+
+    def test_prompt_arrows_skip_replies_and_anchor_to_response_ownership_in_scope(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First input", "one"),
+            ("assistant", start + 1000, "First reply", "one"),
+            ("assistant", start + 1500, "Another reply", "one"),
+            ("user", start + 2000, "Second input", "one"),
+            ("assistant", start + 3000, "Delayed first-turn reply", "one"),
+            ("user", start + 4000, "Third input", "one"),
+            ("assistant", start + 5000, "Third-turn reply", "one"),
+            ("user", start + 6000, "Other session", "two"),
+        ], message_fields={
+            "H001": {"turn_id": "first"}, "H004": {"turn_id": "second"},
+            "R005": {"turn_id": "first"}, "H006": {"turn_id": "third"},
+        })
+        self.page.locator("#session").select_option('["Cursor","one"]')
+        self.page.evaluate("window.vennPlayback.jumpToMessage('R005')")
+        self.assertEqual(self.page.locator("#human-text").inner_text(), "First input")
+        self.assertEqual(self.page.locator("#message-number").inner_text(), "1 of 3")
+        self.assertTrue(self.page.locator("#prev-text").is_disabled())
+        self.page.get_by_role("button", name="Next user prompt", exact=True).click()
+        self.assertEqual(self.state()["message"], "H004")
+        self.page.locator("#next-text").click()
+        self.assertEqual(self.state()["message"], "H006")
+        self.assertEqual(self.page.locator("#message-number").inner_text(), "3 of 3")
+        self.assertTrue(self.page.locator("#next-text").is_disabled())
+        self.page.evaluate("window.vennPlayback.jumpToMessage('R007')")
+        self.assertTrue(self.page.locator("#next-text").is_disabled())
+        self.page.get_by_role("button", name="Previous user prompt", exact=True).click()
+        self.assertEqual(self.state()["message"], "H004")
+        self.assertFalse(self.errors)
+
+    def test_prompt_arrows_preserve_source_order_for_equal_timestamps(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First input", "one"),
+            ("assistant", start, "First reply", "one"),
+            ("user", start, "Second input", "one"),
+            ("assistant", start, "Second reply", "one"),
+        ])
+        self.page.evaluate("window.vennPlayback.jumpToMessage('H001')")
+        self.page.locator("#next-text").click()
+        self.assertEqual(self.state()["message"], "H003")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Second reply")
+        self.assertTrue(self.page.locator("#next-text").is_disabled())
+        self.page.locator("#prev-text").click()
+        self.assertEqual(self.state()["message"], "H001")
+        self.assertTrue(self.page.locator("#prev-text").is_disabled())
+        self.assertFalse(self.errors)
+
+    def test_user_and_agent_colors_are_consistent_in_replay_and_full_log(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First input", "one"),
+            ("assistant", start + 1000, "First reply", "one"),
+            ("user", start + 2000, "Second input", "one"),
+            ("assistant", start + 3000, "Second reply", "one"),
+        ], usages=[{"t": start + 500, "model": "m", "input": 100, "output": 10}], pricing=PRICING)
+        url = self.page.url
+        for theme in ("light", "dark"):
+            for log_only in (False, True):
+                with self.subTest(theme=theme, log_only=log_only):
+                    self.page.emulate_media(color_scheme=theme)
+                    self.page.goto(url + ("?view=log" if log_only else ""), wait_until="networkidle")
+                    colors = self.page.evaluate("""() => {
+                        const style = selector => getComputedStyle(document.querySelector(selector));
+                        const palette = selector => ({
+                            background:style(selector).backgroundColor,
+                            border:style(selector).borderLeftColor,
+                            color:style(selector).color
+                        });
+                        return {
+                            user:palette('#human-text'),footer:palette('#prompt-usage'),
+                            userRow:palette('.event-row[data-id="H003"]'),
+                            agent:palette('#agent-text'),agentRow:palette('.event-row[data-id="R002"]'),
+                            userLegend:style('.legend .human').backgroundColor,
+                            agentLegend:style('.legend .agent').backgroundColor,
+                            userDot:style('#timeline circle[aria-label^="H003"]').fill
+                        };
+                    }""")
+                    self.assertEqual(colors["user"], colors["userRow"])
+                    self.assertEqual(colors["user"], colors["footer"])
+                    self.assertEqual(colors["agent"], colors["agentRow"])
+                    self.assertNotEqual(colors["user"]["background"], colors["agent"]["background"])
+                    self.assertNotEqual(colors["user"]["border"], colors["agent"]["border"])
+                    red, green, blue = map(int, colors["user"]["border"].removeprefix("rgb(").removesuffix(")").split(","))
+                    self.assertGreater(green, red)
+                    self.assertGreater(green, blue)
+                    self.assertEqual(colors["user"]["border"], colors["userLegend"])
+                    self.assertEqual(colors["user"]["border"], colors["userDot"])
+                    self.assertEqual(colors["agent"]["border"], colors["agentLegend"])
+                    self.page.evaluate("window.vennPlayback.jumpToMessage('R002')")
+                    self.assertEqual(self.page.locator(".agent-response.active").evaluate(
+                        "el => getComputedStyle(el).borderLeftColor"), colors["agent"]["border"])
         self.assertFalse(self.errors)
 
     def test_drag_selection_zooms_in_both_directions_and_scrollbar_pans(self):
@@ -566,11 +858,10 @@ class PlayerTests(unittest.TestCase):
         self.assertIsNone(self.page.evaluate("window.pwned"))
         self.assertEqual(self.page.locator("#human-text").inner_text(), hostile)
         self.page.locator("#next-text").click()
-        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Undated reply")
-        self.page.locator("#next-text").click()
         self.assertEqual(self.page.locator("#human-text").inner_text(), "More")
         self.page.locator("#prev-text").click()
-        self.assertEqual(self.state()["message"], "R002")
+        self.assertEqual(self.state()["message"], "H001")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Undated reply")
         self.assertTrue(self.page.locator("#zoom-in").is_disabled())
         self.assertFalse(self.errors)
 
@@ -584,9 +875,6 @@ class PlayerTests(unittest.TestCase):
         ])
         self.page.evaluate("window.vennPlayback.jumpToMessage('H001')")
         self.assertEqual("Reply to one", self.page.locator("#agent-text .response-text").inner_text())
-        self.page.locator("#next-text").click()
-        self.assertEqual(self.state()["message"], "R002")
-        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Reply to one")
         self.page.locator("#next-text").click()
         self.assertEqual(self.state()["message"], "H003")
         self.assertNotIn("Reply to one", self.page.locator("#agent-text").inner_text())
@@ -745,7 +1033,7 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(self.page.locator('#timeline circle[aria-label^="H003"]').get_attribute("r"), "4.7")
         self.page.locator("#prev-text").click()
         self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "First response")
-        self.assertEqual(self.page.locator("#event-list .active").get_attribute("data-id"), "R002")
+        self.assertEqual(self.page.locator("#event-list .active").get_attribute("data-id"), "H001")
         self.assertEqual(self.page.locator('#timeline circle[aria-label^="H001"]').get_attribute("r"), "4.7")
         self.assertEqual(self.page.locator('#timeline circle[aria-label^="H003"]').get_attribute("r"), "2.8")
         self.assertFalse(self.errors)

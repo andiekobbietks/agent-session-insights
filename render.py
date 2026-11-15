@@ -30,10 +30,13 @@ nav{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;font-size:13px}.stats{dis
 table{border-collapse:collapse;width:100%;font-size:12px}td,th{padding:6px 8px;border-bottom:1px solid #dde5eb;text-align:left;vertical-align:top}th{background:#edf3f6}.table-scroll{overflow:auto}
 .decision{border-left:3px solid var(--gold);padding:4px 12px;margin:12px 0}.quote,.message{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.45 system-ui,sans-serif;background:#f5f8fa;padding:10px;border-left:3px solid var(--teal)}
 .agent{border-left-color:#839daf}.source{font-size:11px;color:var(--muted)}.playback-frame{width:100%;height:1250px;border:1px solid #dde5eb;border-radius:10px}
+.session-log-frame{display:block;width:100%;height:clamp(300px,50vh,600px);border:0}.session-log-heading{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px 16px}.session-log-heading h2{flex:1;margin:0}.session-log-heading input{max-width:100%;width:300px;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--muted);border-radius:6px}
 .record-usage{font-size:11px;color:var(--teal);margin:0 0 8px;padding:6px 10px;background:#edf6f4;border-left:3px solid var(--teal)}
+.model-comparison table{min-width:850px;font-variant-numeric:tabular-nums}.model-comparison th:nth-child(n+2),.model-comparison td:nth-child(n+2){text-align:right}.model-comparison td:nth-child(5),.model-comparison td:nth-child(7){font-weight:700}.comparison-legend{display:flex;gap:18px;font-size:12px}.comparison-legend span::before{content:"";display:inline-block;width:12px;height:8px;margin-right:6px;background:var(--teal)}.comparison-legend .cost-share::before{background:var(--gold)}.model-chart text{fill:var(--ink)}
 .playback-poster{display:none;width:100%}.chart{display:block;width:100%;height:auto}details{margin:6px 0}summary{cursor:pointer;font-weight:650}code{font-size:.85em}.detail-scroll{max-height:420px;overflow:auto}
 @media(max-width:600px){main{padding:0 14px;margin:16px auto}h1{font-size:27px}section{padding:16px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat.cost{grid-column:1/-1;flex-direction:row;justify-content:flex-start;align-items:baseline;gap:8px;flex-wrap:wrap}header{padding:20px}}
-@media print{body{background:white;font-size:10pt}main{padding:0;margin:0;max-width:none}nav,.playback-frame{display:none}.playback-poster{display:block}
+@media print{body{background:white;font-size:10pt}main{padding:0;margin:0;max-width:none}nav,.playback-frame,.session-log-frame,.session-log-heading input{display:none}.playback-poster{display:block}
+ .model-comparison table{min-width:0;font-size:9px}
 section{border:0;padding:0;margin:12px 0}header{background:#edf3f6;color:var(--ink);padding:14px}.stats{grid-template-columns:repeat(5,minmax(0,1fr))}.stat{padding:8px}.stat.cost{grid-column:auto;flex-direction:column;align-items:stretch;justify-content:space-between}
 h2,h3,summary{break-after:avoid}.decision,.stat,tr{break-inside:avoid}.quote,.message{font-size:9pt}details{break-inside:auto}.detail-scroll{max-height:none;overflow:visible}a{color:inherit;text-decoration:none}}
 """
@@ -161,7 +164,7 @@ def payload(events, analysis):
     timed = humans + updates + usage
     lo = min((e["t"] for e in timed), default=None)
     hi = max((e["t"] for e in timed), default=None)
-    days, clusters = [], []
+    days, day_night, clusters = [], [], []
     if timed:
         day = datetime.fromtimestamp(lo / 1000, ZoneInfo(analysis["timezone"])).replace(hour=0, minute=0, second=0, microsecond=0)
         while day.timestamp() * 1000 <= hi:
@@ -169,6 +172,12 @@ def payload(events, analysis):
             days.append({"label": day.strftime("%a %b %d"), "date": day.date().isoformat(),
                          "start": max(lo, round(day.timestamp() * 1000)),
                          "end": min(hi, round(end.timestamp() * 1000) - 1)})
+            boundaries = (day, day.replace(hour=6), day.replace(hour=18), end)
+            for i in range(3):
+                start = max(lo, round(boundaries[i].timestamp() * 1000))
+                finish = min(hi, round(boundaries[i + 1].timestamp() * 1000))
+                if start < finish:
+                    day_night.append({"start": start, "end": finish, "kind": "day" if i == 1 else "night"})
             day = end
         conversations = {(h["tool"], h["session"]) for h in humans}
         for tool, session in sorted(conversations):
@@ -185,7 +194,8 @@ def payload(events, analysis):
                  "undated_count": len(undated), "curated_markers": len(decisions),
                  "method": "Navigate messages manually. Selecting an input lists all its recorded assistant responses with timestamps and sources. Selecting a response highlights it without hiding other replies. Ownership follows recorded turn IDs or matching requests before inferred same-conversation proximity. Gold marks reviewed directions. Unknown times remain outside the clock. Model events use per-request usage, not cumulative counters."},
         "sessions": sorted(sessions.values(), key=lambda row: (row["start"] is None, row["start"] or 0, row["tool"], row["session"])),
-        "days": days, "humans": humans, "updates": updates, "usage": usage, "undated": undated, "clusters": clusters,
+        "days": days, "day_night": day_night,
+        "humans": humans, "updates": updates, "usage": usage, "undated": undated, "clusters": clusters,
         "accounting": {
             **analysis["accounting"],
             "requests": [{**r, "tool": HARNESSES[r["harness"]]} for r in analysis["accounting"]["requests"]],
@@ -233,7 +243,7 @@ def report_html(collection, events, analysis):
             f'<header><p class="eyebrow">AGENT SESSION INSIGHTS</p><h1>{title}</h1><p>{e(review_prose(analysis["interpretation"]["summary"]))}</p><a href="player.html">Open standalone session player</a></header>',
             '<nav aria-label="Report contents">' + "".join(f'<a href="#{key}">{label}</a>' for key, label in [
                 ("coverage", "Coverage"), ("usage", "Usage"), ("time", "Activity"), ("directions", "User direction"),
-                ("playback", "Replay"), ("sources", "Data")]) + "</nav>",
+                ("playback", "Replay"), ("session-log", "Full session log"), ("sources", "Data")]) + "</nav>",
             '<div class="stats">' + "".join(f'<div class="stat"><b>{number(analysis[key])}</b><span>{label}</span></div>' for key, label in [
                 ("human_inputs", "User inputs"), ("assistant_messages", "Assistant messages"),
                 ("metered_requests", "Metered requests"), ("tool_calls", "Tool invocations")])
@@ -273,23 +283,60 @@ def report_html(collection, events, analysis):
     html.append('<section id="usage"><h2>Observed usage and model mix</h2>')
     html.append(table(["Inclusive input", "Output", "Cached reads (inside input)", "Cache creation (inside input)"],
                       [[number(analysis[key]) for key in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")]]))
-    html.append(table(["Model", "Requests", "Input tokens", "Output tokens", "Share of observed tokens"],
-                      [(m["model"], number(m["requests"]), number(m["input"]), number(m["output"]), f'{m["token_percent"]:.2f}%') for m in analysis["models"]]))
-    if analysis["models"]:
-        chart = [f'<svg class="chart" viewBox="0 0 900 {len(analysis["models"]) * 28}" role="img" aria-label="Share of observed tokens by model">']
-        for i, model in enumerate(analysis["models"]):
-            y = 6 + i * 28
-            chart.append(f'<text x="0" y="{y+14}" font-size="12">{e(model["model"])}</text><rect x="200" y="{y}" width="{model["token_percent"]*6}" height="16" fill="#2c8582"/><text x="810" y="{y+14}" font-size="12">{model["token_percent"]:.1f}%</text>')
-        html.extend(chart + ["</svg>"])
     accounting = analysis["accounting"]
-    html.append(f'<p>{e(analysis["cost"])}</p>')
+    total = accounting["total"]
+    model_summaries = {model: summarize([r for r in accounting["requests"] if r["model"] == model])
+                       for model in total["models"]}
+    token_shares_known = total["input_complete"] and total["input"] + total["output"] > 0
+    cost_shares_known = (not total["unpriced_calls"] and total["estimated_usd"] is not None
+                         and total["estimated_usd"] > 0
+                         and total["estimated_usd_min"] == total["estimated_usd_max"])
+    html.append(f'<p>{e(analysis["cost"])}</p><div id="model-comparison" class="model-comparison">')
+    rows = []
+    for model in analysis["models"]:
+        summary = model_summaries[model["model"]]
+        tokens = number(summary["input"] + summary["output"])
+        if not summary["input_complete"]:
+            tokens += "+ (incomplete)"
+        cost_share = (f'{100 * summary["estimated_usd"] / total["estimated_usd"]:.1f}%'
+                      if cost_shares_known else "Unavailable")
+        rows.append((model["model"], number(summary["calls"]), input_number(summary), number(summary["output"]),
+                     tokens, f'{model["token_percent"]:.1f}%' if token_shares_known else "Unavailable",
+                     spend(summary), cost_share))
+    html.append(table(["Model", "Requests", "Input tokens", "Output tokens", "Total tokens",
+                       "Token share", "Estimated cost (USD)", "Cost share"], rows))
+    html.append('</div><p class="source">Input includes cached reads and writes; total tokens = input + output. '
+                'Token shares require complete, nonzero totals. Cost shares require fully priced, nonzero '
+                'totals without ranges. Different workloads and cache use make this a usage comparison, '
+                'not a model-efficiency benchmark.</p>')
+    if analysis["models"]:
+        chart = ['<p class="comparison-legend"><span>Token share</span><span class="cost-share">Cost share</span></p>',
+                 f'<svg class="chart model-chart" viewBox="0 0 900 {len(analysis["models"]) * 48}" role="img" aria-label="Token share and estimated cost share by model">']
+        for i, model in enumerate(analysis["models"]):
+            y = 6 + i * 48
+            summary = model_summaries[model["model"]]
+            chart.append(f'<text x="0" y="{y+19}" font-size="12">{e(model["model"])}</text>')
+            for offset, known, share, color, label in (
+                (0, token_shares_known, model["token_percent"], "teal", "Token"),
+                (18, cost_shares_known,
+                 100 * summary["estimated_usd"] / total["estimated_usd"] if cost_shares_known else 0,
+                 "gold", "Cost"),
+            ):
+                if known:
+                    chart.append(f'<rect x="200" y="{y+offset}" width="{share*6}" height="12" fill="var(--{color})"><title>{e(model["model"])}: {label.lower()} share {share:.1f}%</title></rect><text x="810" y="{y+offset+11}" font-size="12">{share:.1f}%</text>')
+                else:
+                    chart.append(f'<text x="200" y="{y+offset+11}" font-size="11">{label} share unavailable</text>')
+        html.extend(chart + ["</svg>"])
+    html.append('<details id="model-cost-details"><summary>Cost breakdown by model</summary>'
+                '<p class="source">Each component shows priced token counts / USD. Counts cover priced requests '
+                'and may include labeled cache-reuse estimates; missing prices are not zero cost.</p>')
     html.append(table(["Model", "Priced / calls", "Fresh input / USD", "Cache reads / USD",
                        "Cache writes / USD", "Output / USD", "Total USD"],
                       [(model, f'{summary["priced_calls"]} / {summary["calls"]}',
                         *(cost_component(summary, key) for key in ("fresh_input", "cache_read", "cache_write", "output")),
                         spend(summary))
-                       for model in accounting["total"]["models"]
-                       for summary in [summarize([r for r in accounting["requests"] if r["model"] == model])]]))
+                       for model, summary in model_summaries.items()]))
+    html.append('</details>')
     html.append(f'<details id="turn-spend-details"><summary>Spend and tokens by user turn ({len(accounting["turns"])})</summary><div class="detail-scroll">')
     html.append(table(["Turn", "Prompt", "Models", "Calls", "Input tokens", "Output tokens", "Estimated USD"],
                       [(turn["id"], turn["text"][:60], ", ".join(turn["models"]) or "Unknown", turn["calls"],
@@ -314,9 +361,24 @@ def report_html(collection, events, analysis):
             response = by_id[decision["response"]]
             html.append(f'<p class="source">Agent-reported response: <a href="player.html#{response["id"]}">{response["id"]}</a> · {e(response["source"])}</p><div class="quote agent">{e(response["text"])}</div>')
         html.append("</article>")
-    html.append('</div></section><section id="playback"><h2>Interactive session playback</h2><p><a href="player.html">Open the standalone player</a>. Use the arrow buttons on the right of the session text to move between messages and follow their timeline positions. Drag across the timeline to zoom and use its scrollbar to pan, or search the full conversation. Axis labels include clock time.</p><iframe title="Session replay" class="playback-frame" src="player.html"></iframe><img class="playback-poster" src="timeline.png" alt="Static preview of the session timeline; use player.html for interaction"></section>')
+    html.append('</div></section><section id="playback"><h2>Interactive session playback</h2><p><a href="player.html">Open the standalone player</a>. Use the arrow buttons on the right of the session text to move between user prompts and follow their timeline positions. Drag across the timeline to zoom and use its scrollbar to pan. Search the separate full session log below. Axis labels include clock time.</p><iframe title="Session replay" class="playback-frame" src="player.html"></iframe><img class="playback-poster" src="timeline.png" alt="Static preview of the session timeline; use player.html for interaction"></section>')
+    html.append('<section id="session-log"><div class="session-log-heading"><h2>Full session log</h2><input id="session-log-search" type="search" aria-label="Search full session log" placeholder="Search user/agent messages or IDs..."></div><p>Select a message to navigate Replay above. The <a href="player.html">standalone player</a> also includes the full conversation.</p><p class="source">Each user prompt includes its complete recorded turn\'s model, estimated cost and tokens. Agent rows do not repeat the charge.</p><iframe title="Full session log" class="session-log-frame" src="player.html?view=log"></iframe></section>')
     html.append('<section id="sources"><h2>Data</h2><p><a href="collection.json">Sessions</a> · <a href="analysis.json">Analysis</a> · <a href="events.jsonl">Messages and usage</a> · <a href="pricing.json">Rates</a> · <a href="verification.json">Verification</a></p>')
-    html.append('</section></main></body></html>')
+    html.append("""</section></main><script>
+const replay=document.querySelector('.playback-frame'),log=document.querySelector('.session-log-frame');
+const logSearch=document.getElementById('session-log-search');
+const searchLog=()=>log.contentWindow.postMessage({type:'session-log-search',query:logSearch.value},'*');
+logSearch.addEventListener('input',searchLog);log.addEventListener('load',searchLog);
+window.addEventListener('message',event=>{
+  if(event.source===replay.contentWindow&&event.data?.type==='session-replay-height'){
+    if(Number.isFinite(event.data.height)&&event.data.height>0)replay.style.height=`${Math.ceil(event.data.height)+replay.offsetHeight-replay.clientHeight}px`;
+    return;
+  }
+  if(event.data?.type!=='session-message-selected'||typeof event.data.id!=='string')return;
+  const target=event.source===log.contentWindow?replay:event.source===replay.contentWindow?log:null;
+  target?.contentWindow.postMessage({type:'session-message-selected',id:event.data.id},'*');
+});
+</script></body></html>""")
     return "".join(html)
 
 
@@ -457,12 +519,14 @@ def publish(output, collection, events, analysis, public_base_url=None):
         assert not navigation_errors, navigation_errors
         if data["meta"]["start"] is not None:
             page.locator("#start").click()
-            first = state()["message"]
-            if len(data["humans"]) + len(data["updates"]) > 1:
+            if len(data["humans"]) > 1:
+                prompts = sorted(data["humans"], key=lambda row: (row["t"], row["order"]))
+                page.evaluate("(id) => window.vennPlayback.jumpToMessage(id)", prompts[0]["id"])
                 page.locator("#next-text").click()
-                assert state()["message"] != first
+                assert state()["message"] == prompts[1]["id"]
                 page.locator("#prev-text").click()
-                assert state()["message"] == first
+                assert state()["message"] == prompts[0]["id"]
+                page.locator("#start").click()
             width = state()["hi"] - state()["lo"]
             if width > 1000:
                 page.locator("#zoom-in").click()
@@ -539,6 +603,7 @@ def publish(output, collection, events, analysis, public_base_url=None):
         assert page.locator("h1").count() == 1
         assert page.locator(".record, #record, #limits").count() == 0
         assert page.locator('iframe[src="player.html"]').count() == 1
+        assert page.locator('#session-log > iframe[src="player.html?view=log"]').count() == 1
         assert page.locator("img").evaluate_all("(images)=>images.every(i=>i.complete&&i.naturalWidth>0)")
         page.evaluate("document.querySelectorAll('#coverage-details, #turn-spend-details, #hourly-details').forEach(el=>el.open=true)")
         if public_base_url:

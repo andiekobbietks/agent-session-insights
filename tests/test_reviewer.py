@@ -306,12 +306,91 @@ class SourceTests(unittest.TestCase):
                 page.set_content(report_html(collection, events, analysis))
                 self.assertEqual(page.locator("header .eyebrow").inner_text(), "AGENT SESSION INSIGHTS")
                 chart = page.locator(".chart").bounding_box()
-                self.assertAlmostEqual(chart["height"] / chart["width"], count * 28 / 900, places=3)
+                self.assertAlmostEqual(chart["height"] / chart["width"], count * 48 / 900, places=3)
                 if count == 1:
-                    self.assertLess(chart["height"], 40)
+                    self.assertLess(chart["height"], 64)
                 section = page.locator("#usage").bounding_box()
                 heading = page.locator("#usage h2").bounding_box()
                 self.assertLessEqual(heading["y"] - section["y"], 18)
+            browser.close()
+
+    def test_model_comparison_aligns_token_totals_and_costs_with_distinct_shares(self):
+        from playwright.sync_api import sync_playwright
+        collection = {"title": "Comparison", "timezone": "UTC", "sources": [],
+                      "missing_harnesses": {}, "warnings": [], "pricing": {"card": {
+                          "currency": "USD", "unit": "per million tokens", "verified_on": "2026-11-07",
+                          "sources": {"test": "https://example.com/pricing"}, "models": {
+                              "premium": {"input": 2, "cache_read": 0.2, "cache_write": 2.5, "output": 10, "source": "test"},
+                              "economy": {"input": 1, "cache_read": 0.1, "cache_write": 2, "output": 2, "source": "test"},
+                          }}}}
+        events = [
+            {"id": "A001", "model": "premium", "input": 1000000, "output": 100000,
+             "cached_read": 500000, "cache_write": 100000},
+            {"id": "A002", "model": "economy", "input": 3000000, "output": 100000,
+             "cached_read": 2000000, "cache_write": 0},
+        ]
+        events = [{**event, "kind": "usage", "identity": event["id"], "harness": "copilot",
+                   "session": "test", "source": f"S01:{i}", "timestamp": TIME, "t": epoch(TIME)}
+                  for i, event in enumerate(events, 1)]
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_content(report_html(collection, events, analysis))
+            rows = page.locator("#model-comparison tbody tr")
+            self.assertEqual(rows.count(), 2)
+            self.assertEqual(rows.filter(has_text="premium").locator("td").all_text_contents(),
+                             ["premium", "1", "1,000,000", "100,000", "1,100,000", "26.2%", "$2.15", "60.6%"])
+            self.assertEqual(rows.filter(has_text="economy").locator("td").all_text_contents(),
+                             ["economy", "1", "3,000,000", "100,000", "3,100,000", "73.8%", "$1.40", "39.4%"])
+            self.assertEqual(page.locator(".model-chart rect").count(), 4)
+            self.assertIn("premium: cost share 60.6%", page.locator(".model-chart").text_content())
+            details = page.locator("#model-cost-details")
+            self.assertFalse(details.evaluate("el => el.open"))
+            details.locator("summary").click()
+            self.assertIn("500,000 / $0.10", details.inner_text())
+            self.assertIn("not a model-efficiency benchmark", page.locator("#usage").inner_text())
+            for width in (1280, 390):
+                page.set_viewport_size({"width": width, "height": 900})
+                self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)
+            page.set_viewport_size({"width": 794, "height": 1123})
+            page.emulate_media(media="print")
+            self.assertLessEqual(page.locator("#model-comparison table").bounding_box()["width"],
+                                 page.locator("#usage").bounding_box()["width"])
+            browser.close()
+
+    def test_model_comparison_does_not_invent_shares_for_incomplete_costs_or_tokens(self):
+        from playwright.sync_api import sync_playwright
+        collection = {"title": "Incomplete comparison", "timezone": "UTC", "sources": [],
+                      "missing_harnesses": {}, "warnings": [], "pricing": {"card": {
+                          "currency": "USD", "unit": "per million tokens", "verified_on": "2026-11-07",
+                          "sources": {"test": "https://example.com/pricing"}, "models": {
+                              "known": {"input": 2, "cache_read": 0.1, "cache_write": 2.5, "output": 10, "source": "test"},
+                          }}}}
+        base = {"model": "known", "input": 1000000, "output": 100000, "cached_read": 0, "cache_write": 0}
+        cases = [
+            ([base, {**base, "model": "unknown"}], "Unpriced"),
+            ([{**base, "cached_read_known": False, "cache_write_known": False}], "Range"),
+            ([{**base, "input_complete": False}], "Unpriced"),
+            ([{**base, "input": 0, "output": 0}], "$0.00"),
+        ]
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            for calls, expected in cases:
+                with self.subTest(expected=expected):
+                    events = [{**call, "id": f"A{i:03d}", "identity": str(i), "kind": "usage",
+                               "harness": "copilot", "session": "test", "source": f"S01:{i}",
+                               "timestamp": None, "t": None} for i, call in enumerate(calls, 1)]
+                    analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+                    page.set_content(report_html(collection, events, analysis))
+                    rows = page.locator("#model-comparison tbody tr")
+                    self.assertIn(expected, rows.inner_text() if rows.count() == 1 else rows.last.inner_text())
+                    self.assertEqual(rows.locator("td:last-child").all_text_contents(), ["Unavailable"] * len(calls))
+                    self.assertEqual(page.locator('.model-chart rect[fill="var(--gold)"]').count(), 0)
+                    if any(not call.get("input_complete", True) for call in calls):
+                        self.assertEqual(rows.locator("td:nth-child(6)").inner_text(), "Unavailable")
+                        self.assertIn("incomplete", rows.locator("td:nth-child(5)").inner_text())
             browser.close()
 
     def test_collection_preserves_session_start_separately_from_selected_bounds(self):

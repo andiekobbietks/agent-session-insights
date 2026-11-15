@@ -10,8 +10,8 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from discovery import discover_repository, matches_repository, select_sessions
-from review import analyze, collect, main, run_report_harness, write_json
+from discovery import discover_repository, matches_repository, path_key, select_sessions
+from review import analyze, collect, confirm_output, is_junction, main, run_report_harness, write_json
 
 REVIEW = Path(__file__).resolve().parents[1] / "review.py"
 TIME = "2026-11-07T17:06:22.211Z"
@@ -34,6 +34,28 @@ class DiscoveryTests(unittest.TestCase):
         self.environment = patch.dict(os.environ, self.env)
         self.environment.start()
         self.addCleanup(self.environment.stop)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junctions only")
+    def test_junction_detection_and_overwrite_protection_without_path_is_junction(self):
+        output = self.root / "junction-report"
+        output.mkdir()
+        write_json(output / "collection.json", {"sources": []})
+        target = self.root / "junction-target"
+        target.mkdir()
+        sentinel = target / "keep.txt"
+        sentinel.write_text("Keep this file.", encoding="utf-8")
+        junction = output / "private"
+        subprocess.run(
+            [os.environ["COMSPEC"], "/c", "mklink", "/J", str(junction), str(target)],
+            check=True, capture_output=True,
+        )
+        self.addCleanup(junction.rmdir)
+        self.assertFalse(is_junction(target))
+        self.assertFalse(is_junction(sentinel))
+        self.assertTrue(is_junction(junction))
+        with self.assertRaisesRegex(ValueError, "unrelated files or links"):
+            confirm_output(output, approved=True)
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "Keep this file.")
 
     def source(self, harness, session, cwd=None, time=TIME, subagent=False):
         cwd = str(cwd or self.repo)
@@ -75,6 +97,87 @@ class DiscoveryTests(unittest.TestCase):
             main()
         return output.getvalue()
 
+    def test_report_commands_fail_before_any_work_when_playwright_is_missing(self):
+        output = self.root / "existing-report"
+        output.mkdir()
+        sentinel = output / "keep.txt"
+        sentinel.write_text("Keep this file.", encoding="utf-8")
+        for args in (
+            ["repo", "--repo", str(self.repo)],
+            ["repo", "--repo", str(self.repo), "--noagent"],
+            ["run", "--manifest", str(self.root / "missing-manifest.json")],
+        ):
+            with self.subTest(args=args):
+                stderr = io.StringIO()
+                with (patch.dict(sys.modules, {"playwright.sync_api": None}),
+                      patch.object(sys, "argv", ["review.py", *args, "--output", str(output)]),
+                      patch("review.discover_repository") as discover,
+                      patch("review.confirm_output") as confirm,
+                      patch("review.run_review") as run,
+                      patch("review.run_report_harness") as launch,
+                      contextlib.redirect_stderr(stderr),
+                      self.assertRaises(SystemExit) as failure):
+                    main()
+                self.assertEqual(failure.exception.code, 1)
+                self.assertIn("Missing report dependency", stderr.getvalue())
+                self.assertIn(f'"{sys.executable}" -m pip install', stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
+                discover.assert_not_called()
+                confirm.assert_not_called()
+                run.assert_not_called()
+                launch.assert_not_called()
+                self.assertEqual(sentinel.read_text(encoding="utf-8"), "Keep this file.")
+
+    def test_report_fails_before_discovery_when_chromium_or_pdf_is_unavailable(self):
+        from playwright.sync_api import Error
+        for stage in ("launch", "pdf"):
+            with self.subTest(stage=stage):
+                stderr = io.StringIO()
+                with (patch("playwright.sync_api.sync_playwright") as playwright,
+                      patch("review.discover_repository") as discover,
+                      patch("review.confirm_output") as confirm,
+                      patch("review.run_report_harness") as launch,
+                      patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo)]),
+                      contextlib.redirect_stderr(stderr)):
+                    chromium = playwright.return_value.__enter__.return_value.chromium
+                    if stage == "launch":
+                        chromium.launch.side_effect = Error("Executable doesn't exist")
+                    else:
+                        chromium.launch.return_value.new_page.return_value.pdf.side_effect = Error("PDF unavailable")
+                    with self.assertRaises(SystemExit) as failure:
+                        main()
+                    if stage == "pdf":
+                        chromium.launch.return_value.close.assert_called_once()
+                self.assertEqual(failure.exception.code, 1)
+                self.assertIn("Chromium/PDF rendering is unavailable", stderr.getvalue())
+                self.assertIn(f'"{sys.executable}" -m playwright install chromium', stderr.getvalue())
+                discover.assert_not_called()
+                confirm.assert_not_called()
+                launch.assert_not_called()
+
+    @unittest.skipUnless(os.name == "nt", "tzdata is required on Windows")
+    def test_missing_windows_timezone_dependency_is_reported_before_discovery(self):
+        stderr = io.StringIO()
+        with (patch.dict(sys.modules, {"tzdata": None}),
+              patch("review.discover_repository") as discover,
+              patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo)]),
+              contextlib.redirect_stderr(stderr),
+              self.assertRaises(SystemExit)):
+            main()
+        self.assertIn("Missing report dependency: tzdata", stderr.getvalue())
+        discover.assert_not_called()
+
+    def test_discover_and_prepare_do_not_require_report_dependencies(self):
+        source = self.source("copilot", "selected")
+        manifest = self.root / "manifest.json"
+        write_json(manifest, {"sources": [{"harness": "copilot", "session": "selected", "path": str(source)}]})
+        with (patch.dict(sys.modules, {"playwright.sync_api": None}),
+              patch("review.check_report_dependencies") as check):
+            self.command("discover", "--repo", self.repo)
+            self.command("prepare", "--manifest", manifest, "--output", self.root / "prepared")
+        check.assert_not_called()
+        self.assertTrue((self.root / "prepared" / "collection.json").is_file())
+
     def test_discovers_native_harnesses_by_metadata_and_ignores_siblings_and_subagents(self):
         for harness in self.homes:
             self.source(harness, harness, self.repo / "src")
@@ -85,6 +188,41 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result["warnings"], [])
         self.assertTrue(all(s["title"] is None for s in result["sessions"]))
         self.assertNotIn("Build the feature", json.dumps(result))
+
+    def test_discovery_normalizes_shared_paths_once_per_scan(self):
+        for harness in self.homes:
+            for i in range(10):
+                self.source(harness, f"session-{i}")
+        with patch("discovery.path_key", wraps=path_key) as normalize:
+            first = discover_repository(self.repo)
+            self.assertEqual(len(first["sessions"]), 30)
+            self.assertEqual(normalize.call_count, 1)
+            second = discover_repository(self.repo)
+            self.assertEqual(second, first)
+            self.assertEqual(normalize.call_count, 2)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junctions only")
+    def test_discovery_rechecks_repository_aliases_between_scans(self):
+        alias = self.root / "repository-alias"
+        other = self.root / "other-project"
+        other.mkdir()
+
+        def point_alias(target):
+            subprocess.run(
+                [os.environ["COMSPEC"], "/c", "mklink", "/J", str(alias), str(target)],
+                check=True, capture_output=True,
+            )
+
+        point_alias(self.repo)
+        self.addCleanup(lambda: alias.rmdir() if alias.exists() else None)
+        self.source("copilot", "aliased", alias)
+        first = discover_repository(self.repo)
+        self.assertEqual([s["session"] for s in first["sessions"]], ["aliased"])
+        alias.rmdir()
+        point_alias(other)
+        second = discover_repository(self.repo)
+        self.assertEqual(second["sessions"], [])
+        self.assertEqual(second["warnings"], [])
 
     def test_metadata_discovery_stops_before_transcript_and_reports_malformed_metadata(self):
         path = self.source("copilot", "matching")

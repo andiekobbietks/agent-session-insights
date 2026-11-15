@@ -290,15 +290,18 @@ Player enhancements:
 - Manual navigation only; no play/pause, speed controls or Space shortcut.
 - A date-sorted session picker shows start dates, harnesses and prompt previews.
   Session/day/harness filters scope messages and visible-range usage, not overall totals.
-- Right-aligned, arrow-only previous/next **message** buttons beside the transcript,
-  traversing both human inputs and assistant updates; accessible labels and
-  existing top-level input controls remain. The timeline cursor follows the selected
-  message, panning zoomed views and scrolling narrow timeline viewports as needed.
-  Keep the heading, message position and arrows on one row, with a color highlight
+- Right-aligned, arrow-only previous/next **user prompt** buttons beside the transcript,
+  skipping assistant updates and counting prompts. A selected response anchors navigation
+  to its owning prompt; responses remain directly selectable in the log.
+  The timeline cursor follows the selected prompt, panning zoomed views and scrolling
+  narrow timeline viewports as needed. Keep the heading, prompt position and arrows
+  outside the transcript's scroll region on one row, with a color highlight
   that fades on release, not a depression effect. Message and direction panels have stable heights
   and independent overflow so navigation does not shift the page or full log.
   Clicking a log row preserves its scroll position; navigation from other controls
   can reveal the active log row.
+- User messages use green tints and agent messages use neutral gray surfaces,
+  consistently across the transcript, full log and timeline legend.
 - Drag across the timeline in either direction to zoom to a selected interval.
   A native horizontal scrollbar pans the zoomed window across the selected scope.
   Clicks still seek or select markers; cancelled drags preserve the current view.

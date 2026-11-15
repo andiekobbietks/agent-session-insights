@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -46,6 +47,37 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def is_junction(path):
+    return getattr(path.lstat(), "st_reparse_tag", None) == stat.IO_REPARSE_TAG_MOUNT_POINT
+
+
+def check_report_dependencies():
+    python = f'"{sys.executable}"'
+    try:
+        from playwright.sync_api import Error, sync_playwright
+        if os.name == "nt":
+            import tzdata
+    except ImportError as error:
+        raise ValueError(
+            f"Missing report dependency: {error.name}. "
+            f"Install dependencies with: {python} -m pip install playwright tzdata"
+        ) from error
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, ignore_default_args=["--hide-scrollbars"])
+            try:
+                page = browser.new_page()
+                page.set_content("<p>Report dependency check</p>")
+                page.pdf()
+            finally:
+                browser.close()
+    except (Error, OSError) as error:
+        raise ValueError(
+            f"Chromium/PDF rendering is unavailable: {error}\n"
+            f"Install Chromium with: {python} -m playwright install chromium"
+        ) from error
+
+
 def confirm_output(output, protected=(), *, clear=True, approved=False):
     if not output.exists():
         return
@@ -71,7 +103,7 @@ def confirm_output(output, protected=(), *, clear=True, approved=False):
     directories = {"private", "private/sources"}
     for path in entries:
         relative = path.relative_to(output).as_posix()
-        if (path.is_symlink() or path.is_junction()
+        if (path.is_symlink() or is_junction(path)
                 or (relative not in directories if path.is_dir() else relative not in allowed)):
             raise ValueError(f"Output contains unrelated files or links; will not overwrite: {path}")
     if not approved:
@@ -508,7 +540,7 @@ def launch_report_agent(harness, manifest, output):
                 raise ValueError(f"{harness} exited without writing reviewed annotations; no report was published.")
             require_reviewed_annotations(json.loads(annotations_path.read_text(encoding="utf-8")))
             if (set(draft.rglob("*")) != draft_entries
-                    or any(path.is_symlink() or path.is_junction() for path in draft_entries)
+                    or any(path.is_symlink() or is_junction(path) for path in draft_entries)
                     or any(not path.is_file() or path.is_symlink() or sha256(path) != digest
                            for path, digest in frozen.items())):
                 raise ValueError("Prepared evidence changed during annotation; no report was published.")
@@ -731,6 +763,8 @@ def main():
     args = parser.parse_args()
     os.umask(0o077)
     try:
+        if args.command in ("repo", "run"):
+            check_report_dependencies()
         if args.command == "discover":
             if args.repo:
                 print(json.dumps(discover_repository(args.repo, args.harness, args.root), indent=2))

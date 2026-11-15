@@ -42,10 +42,15 @@ def path_key(value):
 
 
 def matches_repository(repository, metadata):
-    root = path_key(str(repository))
-    git_root = path_key(metadata.get("git_root"))
-    cwd = path_key(metadata.get("cwd"))
-    return root == git_root if git_root else bool(cwd and cwd.startswith(root))
+    return _matches_repository(path_key(str(repository)), metadata, path_key)
+
+
+def _matches_repository(root, metadata, normalize):
+    git_root = normalize(metadata.get("git_root"))
+    if git_root:
+        return root == git_root
+    cwd = normalize(metadata.get("cwd"))
+    return bool(cwd and cwd.startswith(root))
 
 
 def session_metadata(path, harness):
@@ -108,6 +113,16 @@ def discover_repository(repository, harness=None, root=None):
     if root is not None and not Path(root).expanduser().is_dir():
         raise ValueError(f"History root must be an accessible directory: {root}")
     roots = history_roots() if root is None else {harness: (Path(root).expanduser(),)}
+    path_keys = {}
+
+    def normalize(value):
+        if not isinstance(value, str) or not value:
+            return None
+        if value not in path_keys:
+            path_keys[value] = path_key(value)
+        return path_keys[value]
+
+    repository_key = normalize(str(repository))
     inventory = {"repository": str(repository), "sessions": [], "warnings": [], "unavailable": {}}
     patterns = {"copilot": "*/events.jsonl", "claude": "**/*.jsonl", "codex": "**/rollout-*.jsonl"}
     for name in (harness,) if harness else NATIVE_HARNESSES:
@@ -126,7 +141,7 @@ def discover_repository(repository, harness=None, root=None):
                         if not metadata:
                             inventory["warnings"].append(f"No repository/session metadata: {path}")
                             continue
-                        if metadata["subagent"] or not matches_repository(repository, metadata):
+                        if metadata["subagent"] or not _matches_repository(repository_key, metadata, normalize):
                             continue
                         session = metadata["session"]
                         if not isinstance(session, str) or not session:
