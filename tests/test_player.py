@@ -37,12 +37,13 @@ class PlayerTests(unittest.TestCase):
         self.errors = []
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
 
-    def open_player(self, rows, usages=(), pricing=None):
+    def open_player(self, rows, usages=(), pricing=None, decisions=(), message_fields=None):
         events = []
         for i, (kind, time, body, session) in enumerate(rows):
             events.append({"id": f'{"H" if kind == "user" else "R"}{i+1:03d}',
                            "kind": kind, "harness": "cursor", "session": session,
-                           "source": f"S01:{i+1}", "text": body, "timestamp": None, "t": time})
+                           "source": f"S01:{i+1}", "text": body, "timestamp": None, "t": time,
+                           **(message_fields or {}).get(f'{"H" if kind == "user" else "R"}{i+1:03d}', {})})
         for i, usage in enumerate(usages, 1):
             events.append({"id": f"A{i:03d}", "identity": f"call-{i}", "kind": "usage",
                            "harness": "cursor", "session": "one", "source": f"S01:{1000+i}",
@@ -51,7 +52,7 @@ class PlayerTests(unittest.TestCase):
         collection = {"title": "Player test", "timezone": "America/Los_Angeles"}
         if pricing is not None:
             collection["pricing"] = {"card": pricing}
-        analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": list(decisions)})
         data = payload(events, analysis)
         path = Path(self.directory.name) / "player.html"
         path.write_text(player_html(data), encoding="utf-8")
@@ -60,6 +61,354 @@ class PlayerTests(unittest.TestCase):
 
     def state(self):
         return self.page.evaluate("window.vennPlayback.state()")
+
+    def test_all_prompt_replies_stay_listed_and_selecting_one_preserves_layout(self):
+        start = 1794071182211
+        last_reply = "Final reply\n" * 300
+        self.open_player([
+            ("user", start, "First prompt", "one"),
+            ("assistant", start + 1000, "First reply", "one"),
+            ("user", start + 1500, "Other session prompt", "two"),
+            ("assistant", start + 1700, "Other session reply", "two"),
+            ("assistant", start + 2000, last_reply, "one"),
+            ("user", start + 3000, "Next prompt", "one"),
+            ("assistant", start + 4000, "Next turn reply", "one"),
+        ])
+        player = Path(self.directory.name) / "player.html"
+        wrapper = player.with_name("embedded.html")
+        wrapper.write_text('<iframe src="player.html" style="width:100%;height:1000px"></iframe>', encoding="utf-8")
+        geometry = """() => ({
+            height:document.documentElement.scrollHeight,
+            logTop:document.getElementById('event-list').getBoundingClientRect().top+scrollY,
+            widths:['.activity','#agent-text','#event-list'].map(selector=>document.querySelector(selector).clientWidth)
+        })"""
+        for width in (1280, 390):
+            self.page.set_viewport_size({"width": width, "height": 900})
+            for embedded in (False, True):
+                with self.subTest(width=width, embedded=embedded):
+                    self.page.goto((wrapper if embedded else player).as_uri(), wait_until="networkidle")
+                    frame = self.page.frames[1] if embedded else self.page.main_frame
+                    responses = frame.locator("#agent-text .response-text")
+                    self.assertEqual(responses.all_text_contents(), ["First reply", last_reply])
+                    self.assertEqual(frame.evaluate("window.vennPlayback.state().message"), "H001")
+                    self.assertEqual(frame.locator("#update-title").inner_text(), "Agent responses (2)")
+                    self.assertIn("R002", frame.locator(".response-meta").first.inner_text())
+                    self.assertIn("S01:5", frame.locator(".response-meta").last.inner_text())
+                    self.assertTrue(frame.locator("#agent-text").evaluate("el=>el.scrollHeight>el.clientHeight"))
+                    before = frame.evaluate(geometry)
+                    frame.locator(".agent-response").first.evaluate("el=>el.dataset.cached='kept'")
+                    frame.evaluate("window.vennPlayback.jumpToMessage('R005')")
+                    self.assertEqual(frame.locator(".agent-response.active").get_attribute("data-id"), "R005")
+                    self.assertEqual(frame.locator(".agent-response").first.get_attribute("data-cached"), "kept")
+                    self.assertEqual(responses.all_text_contents(), ["First reply", last_reply])
+                    self.assertGreater(frame.locator("#agent-text").evaluate("el=>el.scrollTop"), 0)
+                    self.assertEqual(frame.evaluate(geometry), before)
+                    frame.evaluate("window.vennPlayback.jumpToMessage('H006')")
+                    self.assertEqual(responses.all_text_contents(), ["Next turn reply"])
+                    self.assertEqual(frame.evaluate(geometry), before)
+                    frame.evaluate("window.vennPlayback.jumpToMessage('H001')")
+                    self.assertEqual(responses.all_text_contents(), ["First reply", last_reply])
+                    self.assertEqual(frame.locator("#agent-text").evaluate("el=>el.scrollTop"), 0)
+                    self.assertEqual(frame.evaluate(geometry), before)
+        self.assertFalse(self.errors)
+
+    def test_all_undated_replies_remain_plain_text_and_follow_scoped_navigation(self):
+        hostile = "</script><script>window.pwned=1</script>\nVerbatim reply"
+        self.open_player([
+            ("user", None, "First input", "one"),
+            ("assistant", None, hostile, "one"),
+            ("assistant", None, "Second reply", "one"),
+            ("user", None, "Next input", "one"),
+            ("assistant", None, "Next turn reply", "one"),
+            ("user", None, "Other session", "two"),
+            ("assistant", None, "Other reply", "two"),
+        ])
+        replies = self.page.locator("#agent-text .response-text")
+        self.assertEqual(replies.all_text_contents(), [hostile, "Second reply"])
+        self.assertIsNone(self.page.evaluate("window.pwned"))
+        self.assertIn("Timestamp unavailable", self.page.locator(".response-meta").first.inner_text())
+        self.page.locator("#next-text").click()
+        self.page.locator("#next-text").click()
+        self.assertEqual(replies.all_text_contents(), [hostile, "Second reply"])
+        self.assertEqual(self.page.locator(".agent-response.active").get_attribute("data-id"), "R003")
+        self.page.locator("#session").select_option('["Cursor","two"]')
+        self.assertEqual(replies.all_text_contents(), ["Other reply"])
+        self.page.locator("#session").select_option('["Cursor","one"]')
+        self.assertEqual(replies.all_text_contents(), [hostile, "Second reply"])
+        self.assertEqual(self.page.locator("#message-number").inner_text(), "1 of 5")
+        for _ in range(3):
+            self.page.locator("#next-text").click()
+        self.assertEqual(replies.all_text_contents(), ["Next turn reply"])
+        self.assertEqual(self.page.locator("#human-text").inner_text(), "Next input")
+        self.assertFalse(self.errors)
+
+    def test_response_groups_follow_recorded_ownership_instead_of_the_latest_prompt(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First input", "one"),
+            ("user", start + 1000, "Queued input", "one"),
+            ("assistant", start + 2000, "First input progress", "one"),
+            ("assistant", start + 3000, "Queued input reply", "one"),
+            ("assistant", start + 4000, "First input final reply", "one"),
+            ("assistant", start + 5000, "Unattributed reply", "one"),
+        ], usages=[{"t": start + 5000, "model": "m", "input": 1000, "output": 100,
+                    "identity": "late-call", "turn_id": "first"}],
+           message_fields={"H001": {"turn_id": "first"}, "H002": {"turn_id": "second"},
+                           "R003": {"turn_id": "first"}, "R004": {"turn_id": "second"},
+                           "R005": {"request_id": "late-call"}, "R006": {"turn_id": "missing"}})
+        replies = self.page.locator("#agent-text .response-text")
+        self.assertEqual(replies.all_text_contents(), ["First input progress", "First input final reply"])
+        self.page.evaluate("window.vennPlayback.jumpToMessage('R005')")
+        self.assertEqual(self.page.locator("#human-text").inner_text(), "First input")
+        self.assertEqual(self.state()["selected"], "H001")
+        self.assertEqual(replies.all_text_contents(), ["First input progress", "First input final reply"])
+        self.page.evaluate("window.vennPlayback.jumpToMessage('H002')")
+        self.assertEqual(replies.all_text_contents(), ["Queued input reply"])
+        self.page.evaluate("window.vennPlayback.jumpToMessage('R006')")
+        self.assertEqual(replies.all_text_contents(), ["Unattributed reply"])
+        self.assertIsNone(self.state()["selected"])
+        self.assertIn("No user input", self.page.locator("#human-text").inner_text())
+        self.assertFalse(self.errors)
+
+    def test_session_filter_preserves_totals_and_shows_own_reply(self):
+        start = 1794071182211
+        data = self.open_player([
+            ("user", start, "First session prompt", "one"),
+            ("assistant", start + 1000, "First session reply", "one"),
+            ("user", start + 86400000, "Second session prompt", "two"),
+            ("assistant", start + 86401000, "Second session reply", "two"),
+        ], [
+            {"t": start + 1000, "model": "m", "input": 100000, "output": 1000},
+            {"t": start + 86401000, "session": "two", "model": "m", "input": 200000, "output": 2000},
+        ], PRICING)
+        total = self.page.locator("#session-spend").inner_text()
+        self.page.locator("#day").select_option(data["days"][0]["date"])
+        self.page.locator("#session").select_option('["Cursor","two"]')
+        self.assertEqual(self.page.locator("#day").input_value(), "all")
+        self.assertEqual(self.page.locator("#session-spend").inner_text(), total)
+        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.42")
+        self.assertEqual(self.page.locator("#human-text").inner_text(), "Second session prompt")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Second session reply")
+        self.assertEqual(self.page.locator("#event-list button").count(), 2)
+        labels = self.page.locator("#session option").all_text_contents()
+        self.assertIn("2026", labels[1])
+        self.assertIn("First session prompt", labels[1])
+        self.assertIn("Second session prompt", labels[2])
+        self.page.locator("#usage-details").evaluate("(el) => el.open = true")
+        self.page.locator("#model-scope").click()
+        self.assertIn("200,000 / $0.40", self.page.locator("#model-usage").inner_text())
+        self.assertFalse(self.errors)
+
+    def test_active_log_row_scrolls_with_manual_navigation(self):
+        start = 1794071182211
+        self.open_player([
+            (role, start + i * 1000, f"Message {i}", "one")
+            for i, role in enumerate(["user", "assistant"] * 80)
+        ])
+        self.page.evaluate("window.vennPlayback.jumpToMessage('H159')")
+        self.assertGreater(self.page.locator("#event-list").evaluate("(el) => el.scrollTop"), 0)
+        self.assertTrue(self.page.locator("#event-list").evaluate("""el => {
+            const list = el.getBoundingClientRect(), row = el.querySelector('.active').getBoundingClientRect();
+            return row.top >= list.top && row.bottom <= list.bottom;
+        }"""))
+        self.page.evaluate("window.vennPlayback.jumpToMessage('H001')")
+        self.assertEqual(self.page.locator("#event-list").evaluate("(el) => el.scrollTop"), 0)
+        self.assertFalse(self.errors)
+
+    def test_selecting_log_row_preserves_list_scroll_even_when_zoom_repositions(self):
+        start = 1794071182211
+        self.open_player([
+            (role, start + i * 60000, f"Message {i}", "one")
+            for i, role in enumerate(["user", "assistant"] * 40)
+        ])
+        self.page.locator("#zoom-in").click()
+        self.page.locator("#event-list").scroll_into_view_if_needed()
+        selection = self.page.locator("#event-list").evaluate("""el => {
+            const row = el.querySelector('[data-id="R070"]');
+            el.scrollTop = row.offsetTop + row.offsetHeight - el.clientHeight - 10;
+            const before = el.scrollTop;
+            row.click();
+            return {before, after: el.scrollTop};
+        }""")
+        self.assertEqual(selection["before"], selection["after"])
+        self.assertEqual(self.state()["message"], "R070")
+        self.assertEqual(self.state()["now"], start + 69 * 60000)
+        self.assertEqual(self.page.locator("#event-list .active").get_attribute("data-id"), "R070")
+        coordinates = self.page.locator("#event-list").evaluate("""el => {
+            const row = el.querySelector('[data-id="R068"]');
+            el.scrollTop = row.offsetTop + row.offsetHeight - el.clientHeight - 10;
+            const bounds = el.getBoundingClientRect(), item = row.getBoundingClientRect();
+            return {x:item.x+item.width/2, y:Math.min(bounds.bottom,item.bottom)-5, top:el.scrollTop};
+        }""")
+        self.page.mouse.click(coordinates["x"], coordinates["y"])
+        self.assertEqual(self.state()["message"], "R068")
+        self.assertEqual(self.page.locator("#event-list").evaluate("(el) => el.scrollTop"), coordinates["top"])
+        self.assertFalse(self.errors)
+
+    def test_player_page_height_stays_constant_for_short_and_long_messages(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "Short input", "one"),
+            ("assistant", start + 1000, "Short response", "one"),
+            ("user", start + 2000, "Long input\n" * 500, "one"),
+            ("assistant", start + 3000, "Long response\n" * 500, "one"),
+        ], decisions=[{"input": "H001", "title": "Direction", "category": "Scope", "analysis": "Fixture"}])
+        player = Path(self.directory.name) / "player.html"
+        wrapper = player.with_name("embedded.html")
+        wrapper.write_text('<iframe src="player.html" style="width:100%;height:1000px"></iframe>', encoding="utf-8")
+        for width in (1280, 390):
+            self.page.set_viewport_size({"width": width, "height": 900})
+            for embedded in (False, True):
+                self.page.goto((wrapper if embedded else player).as_uri(), wait_until="networkidle")
+                frame = self.page.frames[1] if embedded else self.page.main_frame
+                before = frame.evaluate("""() => ({
+                    height:document.documentElement.scrollHeight,
+                    logTop:document.getElementById('event-list').getBoundingClientRect().top+scrollY,
+                    widths:['.activity','#human-text','#agent-text','#event-list'].map(selector =>
+                        document.querySelector(selector).clientWidth),
+                    arrowsRight:document.querySelector('.text-arrows').getBoundingClientRect().right
+                })""")
+                for message in ("R002", "H003", "R004", "H001"):
+                    frame.evaluate("(id) => window.vennPlayback.jumpToMessage(id)", message)
+                    after = frame.evaluate("""() => ({
+                        height:document.documentElement.scrollHeight,
+                        logTop:document.getElementById('event-list').getBoundingClientRect().top+scrollY,
+                        widths:['.activity','#human-text','#agent-text','#event-list'].map(selector =>
+                            document.querySelector(selector).clientWidth),
+                        arrowsRight:document.querySelector('.text-arrows').getBoundingClientRect().right
+                    })""")
+                    self.assertEqual(after, before, (width, embedded, message))
+        self.assertFalse(self.errors)
+
+    def test_compact_layout_and_readable_mobile_timeline(self):
+        start = 1794071182211
+        self.page.set_viewport_size({"width": 1280, "height": 900})
+        self.open_player([("user", start, "Prompt", "one"), ("assistant", start + 60000, "Reply", "one")])
+        self.assertLess(self.page.locator(".activity").bounding_box()["y"], 700)
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), 390)
+        self.assertGreaterEqual(self.page.locator("#timeline").bounding_box()["width"], 600)
+        self.page.wait_for_function("""() => {
+            const el = document.querySelector('.axis-label');
+            return parseFloat(getComputedStyle(el).fontSize) * el.getScreenCTM().a >= 11;
+        }""")
+        self.assertTrue(self.page.locator(".axis-label").first.evaluate("""el => {
+            const scale = el.getScreenCTM().a;
+            return parseFloat(getComputedStyle(el).fontSize) * scale >= 11;
+        }"""))
+        self.assertLess(self.page.locator(".activity").bounding_box()["y"], 844)
+        self.assertFalse(self.errors)
+
+    def test_embedded_player_hides_duplicate_header_and_footer(self):
+        start = 1794071182211
+        self.open_player([("user", start, "Prompt", "one")])
+        wrapper = Path(self.directory.name) / "embedded.html"
+        wrapper.write_text('<iframe src="player.html" style="width:1200px;height:900px"></iframe>', encoding="utf-8")
+        self.page.goto(wrapper.as_uri(), wait_until="networkidle")
+        frame = self.page.frame_locator("iframe")
+        self.assertFalse(frame.locator("header").is_visible())
+        self.assertFalse(frame.locator("footer").is_visible())
+        self.assertTrue(frame.locator(".activity").is_visible())
+        self.assertFalse(self.errors)
+
+    def test_undated_session_filter_scopes_log_and_message_navigation(self):
+        self.open_player([
+            ("user", None, "First undated input", "one"),
+            ("assistant", None, "First undated reply", "one"),
+            ("user", None, "Second undated input", "two"),
+            ("assistant", None, "Second undated reply", "two"),
+        ])
+        self.page.locator("#session").select_option('["Cursor","two"]')
+        self.assertEqual(self.page.locator("#event-list button").count(), 2)
+        self.assertEqual(self.page.locator("#undated-select option").count(), 2)
+        self.assertEqual(self.page.locator("#human-text").inner_text(), "Second undated input")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Second undated reply")
+        self.assertTrue(self.page.locator("#prev-text").is_disabled())
+        self.page.locator("#next-text").click()
+        self.assertTrue(self.page.locator("#next-text").is_disabled())
+        self.assertFalse(self.errors)
+
+    def test_manual_navigation_has_no_playback_controls_or_space_shortcut(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First request", "one"),
+            ("assistant", start + 30000, "Response", "one"),
+            ("user", start + 3600000, "Last request", "one"),
+        ])
+        self.assertEqual(self.page.locator("#play, #speed, #skip, #play-state").count(), 0)
+        self.page.keyboard.press("Space")
+        self.assertEqual(self.state()["now"], start)
+        self.page.keyboard.press("ArrowRight")
+        self.assertEqual(self.state()["now"], start + 300000)
+        self.page.keyboard.press("ArrowDown")
+        self.assertEqual(self.page.locator("#human-text").inner_text(), "Last request")
+        self.page.locator("#prev-text").click()
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Response")
+        self.assertFalse(self.errors)
+
+    def test_session_heading_position_and_arrows_share_one_row(self):
+        start = 1794071182211
+        self.open_player([(role, start + i * 1000, f"Message {i}", "one")
+                          for i, role in enumerate(["user", "assistant"] * 38)])
+        self.page.evaluate("window.vennPlayback.jumpToMessage('H021')")
+        self.assertEqual(self.page.locator(".text-controls h2").inner_text(), "Session turns")
+        self.assertEqual(self.page.locator("#message-number").inner_text(), "21 of 76")
+        for width in (1280, 390):
+            self.page.set_viewport_size({"width": width, "height": 900})
+            boxes = self.page.evaluate("""() =>
+                ['.text-controls h2','#message-position','.text-arrows'].map(selector => {
+                    const {x,y,width,height} = document.querySelector(selector).getBoundingClientRect();
+                    return {x,y,width,height};
+                })
+            """)
+            text_bottoms = self.page.evaluate("""() =>
+                ['.text-controls h2','#message-number'].map(selector => {
+                    const range = document.createRange();
+                    range.selectNodeContents(document.querySelector(selector));
+                    return range.getBoundingClientRect().bottom;
+                })
+            """)
+            self.assertLessEqual(max(text_bottoms) - min(text_bottoms), 2)
+            self.assertLessEqual(boxes[0]["x"] + boxes[0]["width"], boxes[1]["x"])
+            self.assertLessEqual(boxes[1]["x"] + boxes[1]["width"], boxes[2]["x"])
+            count = self.page.locator("#message-number").bounding_box()
+            self.assertLessEqual(count["x"] + count["width"], boxes[1]["x"] + boxes[1]["width"])
+            self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), width)
+
+    def test_navigation_buttons_show_pressed_feedback_for_mouse_and_keyboard(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First request", "one"),
+            ("assistant", start + 30000, "Response", "one"),
+            ("user", start + 60000, "Next request", "one"),
+        ], decisions=[{"input": "H001", "title": "First direction", "category": "Scope", "analysis": "Fixture"}])
+        for selector in ("#next-text", "#next-idea", "#next"):
+            button = self.page.locator(selector)
+            button.scroll_into_view_if_needed()
+            button.hover()
+            button.evaluate("""async el => {
+                getComputedStyle(el).backgroundColor;
+                await Promise.all(el.getAnimations().map(animation => animation.finished));
+            }""")
+            color = button.evaluate("(el) => getComputedStyle(el).backgroundColor")
+            self.page.mouse.down()
+            self.assertNotEqual(button.evaluate("(el) => getComputedStyle(el).backgroundColor"), color)
+            self.assertEqual(button.evaluate("(el) => getComputedStyle(el).transform"), "none")
+            self.assertEqual(button.evaluate("(el) => getComputedStyle(el).boxShadow"), "none")
+            self.page.mouse.up()
+            self.page.wait_for_function("""({selector,color}) =>
+                getComputedStyle(document.querySelector(selector)).backgroundColor === color
+            """, arg={"selector": selector, "color": color})
+        previous = self.page.locator("#prev-text")
+        previous.focus()
+        color = previous.evaluate("(el) => getComputedStyle(el).backgroundColor")
+        self.page.keyboard.down("Space")
+        self.assertNotEqual(previous.evaluate("(el) => getComputedStyle(el).backgroundColor"), color)
+        self.page.keyboard.up("Space")
+        self.page.wait_for_function("""color =>
+            getComputedStyle(document.getElementById('prev-text')).backgroundColor === color
+        """, arg=color)
+        self.assertFalse(self.errors)
 
     def test_adjacent_message_controls_zoom_time_ticks_and_full_record_search(self):
         start = 1794071182211
@@ -76,7 +425,7 @@ class PlayerTests(unittest.TestCase):
         arrows = self.page.locator(".text-arrows").bounding_box()
         self.assertAlmostEqual(arrows["x"] + arrows["width"], controls["x"] + controls["width"], delta=1)
         self.page.locator("#next-text").click()
-        self.assertEqual(self.page.locator("#agent-text").inner_text(), "First response")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "First response")
         self.page.locator("#prev-text").click()
         self.assertEqual(self.state()["message"], "H001")
         width = self.state()["hi"] - self.state()["lo"]
@@ -87,7 +436,7 @@ class PlayerTests(unittest.TestCase):
         self.page.locator("#search").fill("Final response")
         self.page.locator("#event-list .event-row").click()
         self.assertEqual(self.state()["message"], data["updates"][-1]["id"])
-        self.assertEqual(self.page.locator("#agent-text").inner_text(), "Final response")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Final response")
         self.page.locator("#zoom-reset").click()
         self.assertEqual(self.state()["hi"] - self.state()["lo"], width)
         self.page.set_viewport_size({"width": 390, "height": 844})
@@ -95,6 +444,45 @@ class PlayerTests(unittest.TestCase):
         controls = self.page.locator(".text-controls").bounding_box()
         arrows = self.page.locator(".text-arrows").bounding_box()
         self.assertAlmostEqual(arrows["x"] + arrows["width"], controls["x"] + controls["width"], delta=1)
+        self.assertFalse(self.errors)
+
+    def test_message_arrows_follow_timeline_and_pan_across_zoom_boundaries(self):
+        start = 1794071182211
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.open_player([
+            ("user", start, "First request", "one"),
+            ("assistant", start + 30000, "First response", "one"),
+            ("user", start + 5400000, "Second request", "one"),
+            ("assistant", start + 7200000, "Second response", "one"),
+        ])
+
+        def assert_cursor(time):
+            self.assertEqual(self.state()["now"], time)
+            self.assertTrue(self.page.evaluate("""() => {
+                const state = window.vennPlayback.state(), svg = document.getElementById('timeline');
+                const line = document.getElementById('playhead'), viewport = document.querySelector('.timeline-viewport');
+                const expected = 150 + (state.now-state.lo)/(state.hi-state.lo)*(svg.viewBox.baseVal.width-170);
+                const cursor = line.getBoundingClientRect(), bounds = viewport.getBoundingClientRect();
+                return Math.abs(Number(line.getAttribute('x1'))-expected)<0.01 &&
+                    cursor.x >= bounds.left && cursor.x <= bounds.right;
+            }"""))
+
+        self.page.locator("#next-text").click()
+        assert_cursor(start + 30000)
+        self.page.locator("#next-text").click()
+        assert_cursor(start + 5400000)
+        self.assertGreater(self.page.locator(".timeline-viewport").evaluate("(el) => el.scrollLeft"), 0)
+        self.page.locator("#prev-text").click()
+        assert_cursor(start + 30000)
+        self.page.locator("#zoom-in").click()
+        width = self.state()["hi"] - self.state()["lo"]
+        self.page.locator("#next-text").click()
+        assert_cursor(start + 5400000)
+        self.assertGreater(self.state()["lo"], start)
+        self.assertEqual(self.state()["hi"] - self.state()["lo"], width)
+        self.page.locator("#prev-text").click()
+        assert_cursor(start + 30000)
+        self.assertEqual(self.state()["lo"], start)
         self.assertFalse(self.errors)
 
     def test_drag_selection_zooms_in_both_directions_and_scrollbar_pans(self):
@@ -109,7 +497,8 @@ class PlayerTests(unittest.TestCase):
                 self.page.locator("#zoom-reset").click()
             self.page.locator("#timeline").scroll_into_view_if_needed()
             box = self.page.locator("#timeline").bounding_box()
-            x = lambda fraction: box["x"] + (150 + fraction * 930) / 1100 * box["width"]
+            width_svg = self.page.locator("#timeline").evaluate("(el) => el.viewBox.baseVal.width")
+            x = lambda fraction: box["x"] + (150 + fraction * (width_svg - 170)) / width_svg * box["width"]
             y = box["y"] + box["height"] * .55
             self.page.mouse.move(x(left), y)
             self.page.mouse.down()
@@ -177,7 +566,7 @@ class PlayerTests(unittest.TestCase):
         self.assertIsNone(self.page.evaluate("window.pwned"))
         self.assertEqual(self.page.locator("#human-text").inner_text(), hostile)
         self.page.locator("#next-text").click()
-        self.assertEqual(self.page.locator("#agent-text").inner_text(), "Undated reply")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Undated reply")
         self.page.locator("#next-text").click()
         self.assertEqual(self.page.locator("#human-text").inner_text(), "More")
         self.page.locator("#prev-text").click()
@@ -194,15 +583,26 @@ class PlayerTests(unittest.TestCase):
             ("assistant", start + 2000, "Reply to two", "two"),
         ])
         self.page.evaluate("window.vennPlayback.jumpToMessage('H001')")
-        self.assertNotIn("Reply to one", self.page.locator("#agent-text").inner_text())
+        self.assertEqual("Reply to one", self.page.locator("#agent-text .response-text").inner_text())
         self.page.locator("#next-text").click()
         self.assertEqual(self.state()["message"], "R002")
-        self.assertEqual(self.page.locator("#agent-text").inner_text(), "Reply to one")
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Reply to one")
         self.page.locator("#next-text").click()
         self.assertEqual(self.state()["message"], "H003")
         self.assertNotIn("Reply to one", self.page.locator("#agent-text").inner_text())
-        self.assertNotIn("Reply to two", self.page.locator("#agent-text").inner_text())
+        self.assertEqual("Reply to two", self.page.locator("#agent-text .response-text").inner_text())
         self.assertFalse(self.errors)
+
+    def test_prompt_without_response_does_not_borrow_next_turn_reply(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "No response", "one"),
+            ("user", start + 1000, "Next input", "one"),
+            ("assistant", start + 2000, "Reply to next input", "one"),
+        ])
+        self.assertEqual(self.page.locator("#agent-text").inner_text(), "No recorded response for this input.")
+        self.page.locator("#next-text").click()
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "Reply to next input")
 
     def test_usage_totals_turns_drag_scroll_and_day_harness_filters(self):
         start = 1794071182211
@@ -216,16 +616,16 @@ class PlayerTests(unittest.TestCase):
             {"t": start + 1200000, "harness": "copilot", "model": "m", "input": 50000, "output": 5000},
             {"t": start + 80000000, "model": "m", "input": 200000, "output": 20000, "cached_read": 40000},
         ], PRICING)
-        self.assertEqual(self.page.locator("#session-spend").inner_text(), "$0.9360")
+        self.assertEqual(self.page.locator("#session-spend").inner_text(), "$0.94")
         self.assertEqual(self.page.locator("#session-spend").count(), 1)
         self.assertTrue(self.page.locator("#window-summary").is_hidden())
         self.assertFalse(self.page.locator("#usage-details").evaluate("(el)=>el.open"))
         self.assertLess(self.page.locator(".usage-card").bounding_box()["height"], 120)
         self.assertEqual(self.page.locator("#model-usage tr").count(), 1)
-        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.9360")
+        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.94")
         self.assertEqual(self.page.locator("#session-tokens").inner_text(), "350,000 in · 35,000 out · 3 calls")
         self.assertIn("Models: m", self.page.locator("#session-models").inner_text())
-        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.2620")
+        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.26")
         self.assertEqual(self.page.locator("#turn-usage-title").inner_text(), "Turn estimate")
         self.assertIn("Complete recorded turn", self.page.locator("#prompt-usage").get_attribute("title"))
         self.assertIn("inferred", self.page.locator("#turn-attribution").text_content())
@@ -235,41 +635,43 @@ class PlayerTests(unittest.TestCase):
         self.assertGreaterEqual(footer["y"], prompt["y"] + prompt["height"])
         self.assertTrue(self.page.evaluate("document.getElementById('human-text').nextElementSibling.id==='prompt-usage'"))
         first_log = self.page.locator('#event-list [data-id="H001"] .event-usage')
-        self.assertIn("m · Est. $0.2620 · 100,000 in · 10,000 out", first_log.inner_text())
-        self.assertIn("$0.5240", self.page.locator('#event-list [data-id="H003"] .event-usage').inner_text())
+        self.assertIn("m · Est. $0.26 · 100,000 in · 10,000 out", first_log.inner_text())
+        self.assertIn("$0.52", self.page.locator('#event-list [data-id="H003"] .event-usage').inner_text())
         self.assertEqual(self.page.locator('#event-list [data-id="R002"] .event-usage').count(), 0)
-        self.assertNotIn("First response", self.page.locator("#agent-text").inner_text())
+        self.assertEqual("First response", self.page.locator("#agent-text .response-text").inner_text())
         self.assertEqual(self.page.locator("#turn-usage-rows tr").count(), 3)
         self.assertIn("Unattributed", self.page.locator("#turn-usage-rows").text_content())
+        self.assertEqual(self.page.locator("#turn-usage-rows tr").last.locator("td").count(), 6)
         self.page.locator("#timeline").scroll_into_view_if_needed()
         box = self.page.locator("#timeline").bounding_box()
-        x = lambda fraction: box["x"] + (150 + fraction * 930) / 1100 * box["width"]
+        width_svg = self.page.locator("#timeline").evaluate("(el) => el.viewBox.baseVal.width")
+        x = lambda fraction: box["x"] + (150 + fraction * (width_svg - 170)) / width_svg * box["width"]
         y = box["y"] + box["height"] * .55
         self.page.mouse.move(x(.002), y)
         self.page.mouse.down()
         self.page.mouse.move(x(.25), y, steps=8)
         self.page.mouse.up()
         self.assertTrue(self.page.locator("#window-summary").is_visible())
-        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.4120")
+        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.41")
         self.page.locator("#timeline-scroll").evaluate("(el)=>{el.scrollLeft=el.scrollWidth-el.clientWidth;}")
-        self.page.wait_for_function("document.getElementById('window-spend').textContent==='$0.5240'")
-        self.assertEqual(self.page.locator("#session-spend").inner_text(), "$0.9360")
+        self.page.wait_for_function("document.getElementById('window-spend').textContent==='$0.52'")
+        self.assertEqual(self.page.locator("#session-spend").inner_text(), "$0.94")
         self.page.locator("#harness").select_option("GitHub Copilot")
-        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.1500")
+        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.15")
         self.page.locator("#harness").select_option("Cursor")
-        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.7860")
+        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.79")
         self.page.locator("#harness").select_option("all")
         self.assertTrue(self.page.locator("#window-summary").is_hidden())
         self.page.locator("#day").select_option(data["days"][1]["date"])
         self.assertTrue(self.page.locator("#window-summary").is_visible())
-        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.5240")
+        self.assertEqual(self.page.locator("#window-spend").inner_text(), "$0.52")
         self.page.locator("#day").select_option("all")
         self.page.evaluate("window.vennPlayback.jumpToMessage('H003')")
-        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.5240")
+        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.52")
         self.assertIn("200,000 in · 20,000 out", self.page.locator("#turn-tokens").inner_text())
         self.page.locator('#event-list [data-id="H001"]').click()
         self.assertEqual(self.state()["selected"], "H001")
-        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.2620")
+        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.26")
         self.page.locator("#usage-details").evaluate("(el)=>el.open=true")
         self.page.locator("#model-usage").evaluate("(el)=>el.closest('details').open=true")
         self.page.set_viewport_size({"width": 390, "height": 844})
@@ -283,14 +685,14 @@ class PlayerTests(unittest.TestCase):
             {"t": None, "model": "</script><script>window.pwned=1</script>", "input": 10, "output": 1},
         ]
         self.open_player(rows, usages, PRICING)
-        self.assertEqual(self.page.locator("#session-spend").inner_text(), "$0.2620 + unpriced calls")
-        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.2620 + unpriced calls")
+        self.assertEqual(self.page.locator("#session-spend").inner_text(), "$0.26 + unpriced calls")
+        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.26 + unpriced calls")
         self.assertIn("1 / 2 recorded calls priced", self.page.locator("#session-models").inner_text())
         self.assertIn("100,010 in · 10,001 out", self.page.locator("#session-tokens").inner_text())
         self.assertEqual(self.page.locator("#window-spend").inner_text(), "No recorded usage")
         self.assertIn("timing unavailable", self.page.locator("#window-coverage").inner_text())
         self.assertTrue(self.page.locator("#window-summary").is_hidden())
-        self.assertIn("$0.2620 + unpriced calls", self.page.locator('#event-list [data-id="H001"] .event-usage').inner_text())
+        self.assertIn("$0.26 + unpriced calls", self.page.locator('#event-list [data-id="H001"] .event-usage').inner_text())
         self.assertEqual(self.page.locator('#event-list [data-id="R002"] .event-usage').count(), 0)
         self.assertIsNone(self.page.evaluate("window.pwned"))
         self.open_player(rows, usages)
@@ -299,6 +701,53 @@ class PlayerTests(unittest.TestCase):
         self.page.locator("#usage-details > summary").click()
         self.assertIn("Spend is unknown, not zero", self.page.locator("#pricing-note").inner_text())
         self.assertIn("Unpriced", self.page.locator('#event-list [data-id="H001"] .event-usage').inner_text())
+        self.assertFalse(self.errors)
+
+    def test_cache_ranges_survive_session_turn_and_filtered_window_displays(self):
+        start = 1794071182211
+        data = self.open_player([
+            ("user", start, "First request", "one"),
+            ("user", start + 60000, "Second request", "one"),
+        ], [
+            {"t": start + 1000, "model": "m", "input": 100000, "output": 1000,
+             "cached_read_known": False, "cache_write_known": False},
+            {"t": start + 61000, "model": "m", "input": 110000, "output": 1000,
+             "cached_read_known": False, "cache_write_known": False},
+        ], PRICING)
+        self.assertTrue(self.page.locator("#session-spend").inner_text().startswith("Range $"))
+        self.assertEqual(data["accounting"]["total"]["priced_calls"], 2)
+        self.assertTrue(self.page.locator("#turn-spend").inner_text().startswith("Range $"))
+        self.page.evaluate("window.vennPlayback.jumpToMessage('H002')")
+        self.assertTrue(self.page.locator("#turn-spend").inner_text().startswith("~$"))
+        self.assertIn("(range $", self.page.locator("#turn-spend").inner_text())
+        self.assertEqual(data["accounting"]["requests"][1]["estimated_cached_read"], 100000)
+        self.page.locator("#zoom-in").click()
+        self.assertTrue(self.page.locator("#window-spend").inner_text().startswith(("Range $", "~$")))
+        self.assertNotIn("Unpriced", self.page.locator("#model-usage").inner_text())
+        self.assertFalse(self.errors)
+
+    def test_message_navigation_reuses_list_and_timeline_without_stale_selection(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First request", "one"),
+            ("assistant", start + 1000, "First response", "one"),
+            ("user", start + 60000, "Second request", "one"),
+            ("assistant", start + 61000, "Second response", "one"),
+        ])
+        self.page.evaluate("""() => {
+            window.firstRow = document.querySelector('#event-list .event-row');
+            window.firstDot = document.querySelector('#timeline circle');
+            window.vennPlayback.jumpToMessage('H003');
+        }""")
+        self.assertEqual(self.page.locator("#human-text").inner_text(), "Second request")
+        self.assertEqual(self.page.locator("#event-list .active").get_attribute("data-id"), "H003")
+        self.assertTrue(self.page.evaluate("window.firstRow.isConnected && window.firstDot.isConnected"))
+        self.assertEqual(self.page.locator('#timeline circle[aria-label^="H003"]').get_attribute("r"), "4.7")
+        self.page.locator("#prev-text").click()
+        self.assertEqual(self.page.locator("#agent-text .response-text").inner_text(), "First response")
+        self.assertEqual(self.page.locator("#event-list .active").get_attribute("data-id"), "R002")
+        self.assertEqual(self.page.locator('#timeline circle[aria-label^="H001"]').get_attribute("r"), "4.7")
+        self.assertEqual(self.page.locator('#timeline circle[aria-label^="H003"]').get_attribute("r"), "2.8")
         self.assertFalse(self.errors)
 
     def test_prompt_footer_is_hidden_without_a_user_and_does_not_carry_over(self):
@@ -311,7 +760,7 @@ class PlayerTests(unittest.TestCase):
         self.assertTrue(self.page.locator("#prompt-usage").is_hidden())
         self.page.evaluate("window.vennPlayback.jumpToMessage('H002')")
         self.assertTrue(self.page.locator("#prompt-usage").is_visible())
-        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.0004")
+        self.assertEqual(self.page.locator("#turn-spend").inner_text(), "$0.00")
         self.page.evaluate("window.vennPlayback.jumpToMessage('R001')")
         self.assertTrue(self.page.locator("#prompt-usage").is_hidden())
         self.assertEqual(self.page.locator("#turn-spend").text_content(), "")

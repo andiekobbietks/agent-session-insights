@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import discover_repository, matches_repository, select_sessions
-from review import main, write_json
+from review import analyze, collect, main, run_report_harness, write_json
 
 REVIEW = Path(__file__).resolve().parents[1] / "review.py"
 TIME = "2026-11-07T17:06:22.211Z"
@@ -202,9 +202,153 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue((output / spec["path"]).is_file())
         self.assertEqual(len(json.loads((output / "discovery.json").read_text())["sessions"]), 2)
         self.assertIn("Selected codex:new", text)
-        with patch("render.publish"), self.assertRaises(SystemExit) as failure:
+        with patch("builtins.input", return_value=""), patch("render.publish"), self.assertRaises(SystemExit) as failure:
             self.command("repo", "--repo", self.repo, "--noagent")
         self.assertEqual(failure.exception.code, 1)
+
+    def test_repo_progress_is_flushed_before_discovery_and_generation(self):
+        self.source("copilot", "selected")
+
+        class ProgressOutput(io.StringIO):
+            flushed = ""
+
+            def flush(self):
+                self.flushed = self.getvalue()
+
+        output = ProgressOutput()
+
+        def discover(*args, **kwargs):
+            self.assertIn("Finding sessions for", output.flushed)
+            return discover_repository(*args, **kwargs)
+
+        def publish(*args):
+            self.assertIn("Generating and verifying", output.flushed)
+
+        with (patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo),
+                                        "--output", str(self.root / "progress-report"), "--noagent"]),
+              contextlib.redirect_stdout(output),
+              patch("review.discover_repository", side_effect=discover),
+              patch("render.publish", side_effect=publish)):
+            main()
+
+    def test_existing_report_requires_confirmation_and_preserves_unrelated_files(self):
+        self.source("copilot", "example")
+        output = self.root / "overwrite"
+        args = ("repo", "--repo", self.repo, "--output", output, "--noagent")
+        with patch("render.publish", side_effect=self.publish_fixture):
+            self.command(*args)
+            original = (output / "collection.json").read_bytes()
+            for answer in ("", "n"):
+                with patch("builtins.input", return_value=answer), self.assertRaises(SystemExit):
+                    self.command(*args)
+                self.assertEqual((output / "collection.json").read_bytes(), original)
+            with patch("builtins.input", side_effect=EOFError), self.assertRaises(SystemExit):
+                self.command(*args)
+            self.assertEqual((output / "collection.json").read_bytes(), original)
+            with patch("builtins.input", return_value="y") as prompt:
+                self.command(*args)
+            self.assertIn("[y/N]?", prompt.call_args.args[0])
+            self.assertTrue((output / "report.pdf").is_file())
+            unrelated = output / "notes.txt"
+            unrelated.write_text("Keep me", encoding="utf-8")
+            with patch("builtins.input", return_value="y") as prompt, self.assertRaises(SystemExit):
+                self.command(*args)
+            prompt.assert_not_called()
+            self.assertEqual(unrelated.read_text(), "Keep me")
+
+    def test_repo_overwrite_prompt_precedes_discovery_and_defers_removal(self):
+        self.source("copilot", "example")
+        original_cwd = Path.cwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, original_cwd)
+        for explicit in (False, True):
+            output = self.root / ("explicit" if explicit else "agent-session-reports") / self.repo.name
+            args = ("repo", "--repo", self.repo, "--noagent")
+            if explicit:
+                args += ("--output", output)
+            with patch("render.publish", side_effect=self.publish_fixture):
+                self.command(*args)
+            before = {path.relative_to(output): path.read_bytes() for path in output.rglob("*") if path.is_file()}
+            with (patch("builtins.input", return_value="n") as prompt,
+                  patch("review.discover_repository") as discover,
+                  patch("review.run_review") as run, patch("review.launch_report_agent") as launch,
+                  self.assertRaises(SystemExit)):
+                self.command(*args)
+            prompt.assert_called_once()
+            discover.assert_not_called()
+            run.assert_not_called()
+            launch.assert_not_called()
+
+            def fail_discovery(*args, **kwargs):
+                prompt.assert_called_once()
+                self.assertEqual({path.relative_to(output): path.read_bytes()
+                                  for path in output.rglob("*") if path.is_file()}, before)
+                raise ValueError("Discovery failed")
+
+            with (patch("builtins.input", return_value="y") as prompt,
+                  patch("review.discover_repository", side_effect=fail_discovery),
+                  self.assertRaises(SystemExit)):
+                self.command(*args)
+            self.assertEqual({path.relative_to(output): path.read_bytes()
+                              for path in output.rglob("*") if path.is_file()}, before)
+
+    def test_approved_overwrite_rechecks_for_unrelated_files_after_discovery(self):
+        self.source("copilot", "example")
+        output = self.root / "rechecked"
+        args = ("repo", "--repo", self.repo, "--output", output, "--noagent")
+        with patch("render.publish", side_effect=self.publish_fixture):
+            self.command(*args)
+        original = (output / "collection.json").read_bytes()
+
+        def discover(*args, **kwargs):
+            (output / "notes.txt").write_text("Keep me", encoding="utf-8")
+            return discover_repository(*args, **kwargs)
+
+        with (patch("builtins.input", return_value="yes") as prompt,
+              patch("review.discover_repository", side_effect=discover), self.assertRaises(SystemExit)):
+            self.command(*args)
+        prompt.assert_called_once()
+        self.assertEqual((output / "collection.json").read_bytes(), original)
+        self.assertEqual((output / "notes.txt").read_text(), "Keep me")
+
+    def test_manifest_overwrite_prompt_precedes_loading_and_defers_input_safety_checks(self):
+        source = self.source("copilot", "example")
+        manifest = self.root / "manifest.json"
+        write_json(manifest, {"sources": [{"harness": "copilot", "session": "example", "path": str(source)}]})
+        output = self.root / "early-manifest"
+        self.command("prepare", "--manifest", manifest, "--output", output)
+        original = (output / "collection.json").read_bytes()
+        missing = self.root / "missing-manifest.json"
+        for answer in ("n", "y"):
+            with patch("builtins.input", return_value=answer) as prompt, self.assertRaises(SystemExit):
+                self.command("run", "--manifest", missing, "--output", output)
+            prompt.assert_called_once()
+            self.assertEqual((output / "collection.json").read_bytes(), original)
+        frozen = output / "private" / "sources" / "S01.jsonl"
+        write_json(manifest, {"sources": [{"harness": "copilot", "session": "example", "path": str(frozen)}]})
+        with patch("builtins.input", return_value="y") as prompt, self.assertRaises(SystemExit):
+            self.command("run", "--manifest", manifest, "--output", output)
+        prompt.assert_called_once()
+        self.assertEqual((output / "collection.json").read_bytes(), original)
+        self.assertTrue(frozen.is_file())
+
+    def test_manifest_cli_confirms_replacement_but_never_deletes_its_inputs(self):
+        source = self.source("copilot", "example")
+        manifest = self.root / "manifest.json"
+        write_json(manifest, {"sources": [{"harness": "copilot", "session": "example", "path": str(source)}]})
+        output = self.root / "draft"
+        args = ("prepare", "--manifest", manifest, "--output", output)
+        self.command(*args)
+        with patch("builtins.input", return_value="yes"):
+            self.command(*args)
+        frozen = output / "manifest.json"
+        write_json(frozen, {"sources": [{"harness": "copilot", "session": "example",
+                                       "path": "private/sources/S01.jsonl"}]})
+        with patch("builtins.input", return_value="y") as prompt, self.assertRaises(SystemExit):
+            self.command("run", "--manifest", frozen, "--output", output)
+        prompt.assert_not_called()
+        self.assertTrue(frozen.is_file())
+        self.assertTrue((output / "private" / "sources" / "S01.jsonl").is_file())
 
     def test_repo_cli_explicit_harness_multi_selection_and_no_matches(self):
         self.source("copilot", "one")
@@ -303,6 +447,9 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(all(Path(path).is_file() for path in request["skills"]))
         self.assertTrue((cwd / "README.md").is_file())
         self.assertTrue((cwd / "DESIGN.md").is_file())
+        design = (cwd / "DESIGN.md").read_text(encoding="utf-8")
+        self.assertIn("Self-contained annotation example", design)
+        self.assertNotIn("`examples/creation-annotations.json`", design)
         for path in request["evidence"].values():
             self.assertTrue(Path(path).is_file())
         self.assertFalse(Path(request["output_directory"]).exists())
@@ -317,6 +464,16 @@ class DiscoveryTests(unittest.TestCase):
         for name in ("report.html", "report.pdf", "player.html"):
             (output / name).write_text("Fixture artifact", encoding="utf-8")
         write_json(output / "verification.json", {"status": "passed"})
+
+    def test_harness_output_filters_blank_lines_but_preserves_messages_errors_and_exit_status(self):
+        command = [sys.executable, "-u", "-c",
+                   "import sys; sys.stdout.write('\\n  first message  \\n\\n \\t\\nsecond message\\n'); "
+                   "sys.stderr.write('\\nwarning\\n\\n'); sys.stdout.write('last message'); sys.exit(7)"]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = run_report_harness(command, cwd=self.root)
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(output.getvalue(), "  first message  \nsecond message\nwarning\nlast message\n")
 
     def test_default_launches_each_harness_with_selected_sources_and_reviewer_prompt(self):
         pricing = self.root / "agent-rates.json"
@@ -335,7 +492,7 @@ class DiscoveryTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 0)
 
                 with (patch("review.shutil.which", return_value=f"{harness}.exe"),
-                      patch("review.subprocess.run", side_effect=run) as launch,
+                      patch("review.run_report_harness", side_effect=run) as launch,
                       patch("render.publish", side_effect=self.publish_fixture)):
                     text = self.command("repo", "--repo", self.repo, "--harness", harness,
                                         "--output", output, "--timezone", "UTC", "--pricing", pricing)
@@ -385,6 +542,8 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertTrue((output / manifest["sources"][0]["path"]).is_file())
                 self.assertEqual(json.loads((output / "annotations.json").read_text())["decisions"][0]["input"], "H001")
                 self.assertIn(f"Launching {harness}", text)
+                self.assertLess(text.index("Preparing evidence"), text.index(f"Launching {harness}"))
+                self.assertLess(text.index(f"Launching {harness}"), text.index("Generating and verifying"))
                 self.assertIn("Verified review:", text)
                 self.assertEqual(
                     text.split("Outputs:\n")[1].splitlines(),
@@ -407,7 +566,7 @@ class DiscoveryTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0)
 
         with (patch("review.shutil.which", side_effect=lambda name: name),
-              patch("review.subprocess.run", side_effect=run),
+              patch("review.run_report_harness", side_effect=run),
               patch("render.publish", side_effect=self.publish_fixture)):
             self.command("repo", "--repo", self.repo)
         self.assertEqual(commands[0][0], str(Path("claude").resolve()))
@@ -429,7 +588,7 @@ class DiscoveryTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0)
 
         with (patch("review.shutil.which", side_effect=lambda name: name),
-              patch("review.subprocess.run", side_effect=run),
+              patch("review.run_report_harness", side_effect=run),
               patch("render.publish", side_effect=self.publish_fixture)):
             self.command("repo", "--repo", self.repo, "--all", "--output", output)
         collection = json.loads((output / "collection.json").read_text())
@@ -441,7 +600,7 @@ class DiscoveryTests(unittest.TestCase):
         output = self.root / "missing-cli"
         with (patch("review.shutil.which", return_value=None),
               patch("review.run_review") as render,
-              patch("review.subprocess.run") as launch):
+              patch("review.run_report_harness") as launch):
             with self.assertRaises(SystemExit):
                 self.command("repo", "--repo", self.repo, "--output", output)
         render.assert_not_called()
@@ -452,19 +611,19 @@ class DiscoveryTests(unittest.TestCase):
         self.source("copilot", "selected")
         output = self.root / "incomplete"
         with (patch("review.shutil.which", return_value="copilot.exe"),
-              patch("review.subprocess.run", return_value=subprocess.CompletedProcess([], 7)),
+              patch("review.run_report_harness", return_value=subprocess.CompletedProcess([], 7)),
               patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo), "--output", str(output)]),
               contextlib.redirect_stdout(io.StringIO()) as stdout,
               contextlib.redirect_stderr(io.StringIO())):
             self.assertEqual(main(), 7)
         self.assertNotIn("Verified review:", stdout.getvalue())
         with (patch("review.shutil.which", return_value="copilot.exe"),
-              patch("review.subprocess.run", return_value=subprocess.CompletedProcess([], 0))):
+              patch("review.run_report_harness", return_value=subprocess.CompletedProcess([], 0))):
             with self.assertRaises(SystemExit):
                 self.command("repo", "--repo", self.repo, "--output", output)
         output.mkdir()
         (output / "existing.txt").write_text("Keep this file.", encoding="utf-8")
-        with patch("review.subprocess.run") as launch, self.assertRaises(SystemExit):
+        with patch("review.run_report_harness") as launch, self.assertRaises(SystemExit):
             self.command("repo", "--repo", self.repo, "--output", output)
         launch.assert_not_called()
         self.assertEqual((output / "existing.txt").read_text(), "Keep this file.")
@@ -497,7 +656,7 @@ class DiscoveryTests(unittest.TestCase):
                         else:
                             (output / collection["sources"][0]["snapshot"]).write_text("Changed snapshot", encoding="utf-8")
                 with (patch("review.shutil.which", return_value="copilot.exe"),
-                      patch("review.subprocess.run", side_effect=run),
+                      patch("review.run_report_harness", side_effect=run),
                       patch("render.publish", side_effect=publish),
                       self.assertRaises(SystemExit)):
                     self.command("repo", "--repo", self.repo, "--output", output)
@@ -572,7 +731,7 @@ class DiscoveryTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 0)
 
                 with (patch("review.shutil.which", return_value=f"{harness}.exe"),
-                      patch("review.subprocess.run", side_effect=run),
+                      patch("review.run_report_harness", side_effect=run),
                       patch("render.publish", side_effect=self.publish_fixture),
                       patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo),
                                                 "--harness", harness, "--output", str(output)]),
@@ -599,7 +758,7 @@ class DiscoveryTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 0)
 
                 with (patch("review.shutil.which", return_value="copilot.exe"),
-                      patch("review.subprocess.run", side_effect=run),
+                      patch("review.run_report_harness", side_effect=run),
                       patch("render.publish") as publish,
                       self.assertRaises(SystemExit)):
                     self.command("repo", "--repo", self.repo, "--output", output)
@@ -616,11 +775,86 @@ class DiscoveryTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0)
 
         with (patch("review.shutil.which", return_value="copilot.exe"),
-              patch("review.subprocess.run", side_effect=run),
+              patch("review.run_report_harness", side_effect=run),
               patch("render.publish", side_effect=self.publish_fixture)):
             self.command("repo", "--repo", self.repo, "--output", output)
         collection = json.loads((output / "collection.json").read_text())
         self.assertEqual((output / collection["sources"][0]["snapshot"]).read_bytes(), original)
+
+    def test_agent_reuses_preparation_and_receives_complete_compact_conversation(self):
+        source = self.source("copilot", "selected")
+        records = [json.loads(line) for line in source.read_text().splitlines()]
+        records[1]["data"]["content"] = "Complete multiline request\nwith code and context."
+        records.append({"type": "assistant.message", "id": "reply", "timestamp": TIME,
+                        "data": {"content": "Complete assistant response\nincluding its caveats."}})
+        records.extend({"type": "session.usage_record", "id": f"usage-{i}", "timestamp": TIME,
+                        "data": {"usage": {"model": "gpt-6.1-sol", "inputTokens": 1000, "outputTokens": 100,
+                                           "cacheReadTokens": 0, "cacheWriteTokens": 0}}} for i in range(12))
+        records.append({"type": "user.message", "id": "approval", "data": {"content": "yes"}})
+        source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+        output = self.root / "reused"
+
+        def run(command, cwd):
+            request = self.complete_agent_request(command, cwd)
+            draft = Path(request["draft_directory"])
+            events = [json.loads(line) for line in (draft / "events.jsonl").read_text().splitlines()]
+            conversation = [json.loads(line) for line in
+                            Path(request["evidence"]["conversation.jsonl"]).read_text().splitlines()]
+            fields = ("id", "kind", "harness", "session", "source", "timestamp", "text")
+            self.assertEqual(conversation, [{key: event[key] for key in fields} for event in events
+                                            if event["kind"] in ("user", "assistant")])
+            self.assertEqual(conversation[-1]["text"], "yes")
+            self.assertIsNone(conversation[-1]["timestamp"])
+            coverage = json.loads(Path(request["evidence"]["coverage.json"]).read_text())
+            self.assertEqual(coverage["human_inputs"], 2)
+            self.assertEqual(coverage["assistant_messages"], 1)
+            self.assertEqual(coverage["usage"]["calls"], 12)
+            self.assertTrue(coverage["warnings"])
+            self.assertNotIn("accounting", coverage)
+            self.assertLess(sum(Path(path).stat().st_size for path in request["evidence"].values()),
+                            (draft / "events.jsonl").stat().st_size + (draft / "analysis.json").stat().st_size)
+            return subprocess.CompletedProcess(command, 0)
+
+        with (patch("review.shutil.which", return_value="copilot.exe"),
+              patch("review.run_report_harness", side_effect=run),
+              patch("review.collect", wraps=collect) as collect_calls,
+              patch("review.analyze", wraps=analyze) as analyze_calls,
+              patch("render.publish", side_effect=self.publish_fixture)):
+            self.command("repo", "--repo", self.repo, "--output", output)
+        self.assertEqual(collect_calls.call_count, 1)
+        self.assertEqual(analyze_calls.call_count, 1)
+        analysis = json.loads((output / "analysis.json").read_text())
+        self.assertEqual(analysis["accounting"]["total"]["calls"], 12)
+        self.assertEqual(analysis["interpretation"]["decisions"][0]["input"], "H001")
+
+    def test_reused_evidence_is_verified_before_publication(self):
+        self.source("copilot", "selected")
+        for target in ("events.jsonl", "analysis.json", "collection.json", "pricing.json",
+                       "snapshot", "conversation.jsonl", "coverage.json", "unexpected"):
+            with self.subTest(target=target):
+                output = self.root / f"tampered-{target}"
+
+                def run(command, cwd):
+                    request = self.complete_agent_request(command, cwd)
+                    draft = Path(request["draft_directory"])
+                    if target in request["evidence"]:
+                        path = Path(request["evidence"][target])
+                    elif target == "snapshot":
+                        collection = json.loads((draft / "collection.json").read_text())
+                        path = draft / collection["sources"][0]["snapshot"]
+                    else:
+                        path = draft / target
+                    with path.open("a", encoding="utf-8") as stream:
+                        stream.write("\n")
+                    return subprocess.CompletedProcess(command, 0)
+
+                with (patch("review.shutil.which", return_value="copilot.exe"),
+                      patch("review.run_report_harness", side_effect=run),
+                      patch("render.publish") as publish,
+                      self.assertRaises(SystemExit)):
+                    self.command("repo", "--repo", self.repo, "--output", output)
+                publish.assert_not_called()
+                self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

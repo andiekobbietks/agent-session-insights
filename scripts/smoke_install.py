@@ -50,6 +50,8 @@ def check():
              "data": {"content": "Synthetic installation test; no real project or history."}},
             {"type": "assistant.message", "id": "a1", "timestamp": "2026-01-01T00:00:02Z",
              "data": {"content": "Synthetic response; no historical outcome is claimed."}},
+            {"type": "session.usage_record", "id": "usage1", "timestamp": "2026-01-01T00:00:03Z",
+             "data": {"usage": {"model": "gpt-6.1-sol", "inputTokens": 1000, "outputTokens": 100}}},
         ]
         (history / "events.jsonl").write_text(
             "\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8",
@@ -100,6 +102,10 @@ def check():
             verification = json.loads((output / "verification.json").read_text(encoding="utf-8"))
             if verification["status"] != "passed":
                 raise ValueError(f"Installed {name} report failed publication checks.")
+            if verification["priced_requests"] != 1 or verification["estimated_usd_min"] is None:
+                raise ValueError(f"Installed {name} report did not use bundled retail rates.")
+            if (output / "pricing.json").read_bytes() != (package / "retail-pricing.json").read_bytes():
+                raise ValueError(f"Installed {name} report did not freeze the bundled rate card.")
             for artifact in ("report.html", "report.pdf", "player.html", "manifest.json", "discovery.json"):
                 if not (output / artifact).is_file():
                     raise ValueError(f"Missing installed {name} artifact: {artifact}")

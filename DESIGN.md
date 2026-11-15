@@ -4,7 +4,7 @@
 
 The reviewer gathers explicit, authorized session sources, measures what the
 records actually contain, interprets human steering with citations, and publishes
-a Venn-style HTML/PDF report and an independent offline player.
+an HTML/PDF report and an independent offline player.
 
 1. **Collect:** agree on project, conversations, inclusive interval, harnesses,
    and output directory. Inventory only approved locations. Freeze selected files,
@@ -23,6 +23,15 @@ The CLI executes deterministic stages; it does not pretend heuristic classificat
 is a qualitative expert review. Annotations distinguish a request from an
 agent-reported result. A reported test pass is not an independently verified
 historical artifact. Agent text is evidence of what the agent said.
+
+The Python repository launcher normalizes and analyzes once. Annotation-only
+agents read `conversation.jsonl`, retaining every complete visible human/assistant
+message, event/source IDs, conversation identity and known/unknown timestamps,
+and `coverage.json`, retaining source warnings, missing harnesses and usage/pricing
+summaries. Repeated request/turn accounting is not sent as primary annotation
+evidence. The wrapper verifies hashes and the prepared inventory after annotation,
+validates references, and reuses the prepared events and metrics for publication.
+Full normalized events, accounting and private snapshots remain in the report.
 
 ## Repository-first discovery
 
@@ -183,8 +192,17 @@ do not apply to this deliberate review of the report-creation interaction.
   remain unknown. No quality rankings or causal speedup claims follow from usage.
 - Occupied 5/10/15-minute bins are sensitivity views, not measured working time,
   active runtime, or unattended-work estimates. Request/response gaps are not latency.
-- Costs are explicitly unavailable without a dated, cache-aware price sheet.
-  Supply a manifest `pricing` path to a card with `verified_on`, `currency: USD`,
+- The overview shows observed wall time from the first to last dated event,
+  including idle gaps. Total turn time sums each prompt-to-final-recorded-assistant-
+  reply span, counting overlapping turns separately. Recorded turn IDs and matching
+  request ownership precede inferred same-conversation proximity. Missing prompt or
+  reply timestamps, absent replies, or reversed times make that turn unknown; show
+  timed/total coverage and label partial sums. Undated events do not contribute to
+  wall time. These elapsed spans are not active compute time or measured work.
+- Use the bundled `retail-pricing.json` dated public standard API rate card by
+  default, or override it with a manifest `pricing` path. Freeze and hash the card
+  with each report; regeneration uses the saved snapshot, not updated rates.
+  Cards have `verified_on`, `currency: USD`,
   `unit: per million tokens`, source references, and per-model `input`, `cache_read`,
   `cache_write`, and `output` rates. Optional `long_context_threshold`,
   `long_input_multiplier`, and `long_output_multiplier` apply per request only
@@ -195,6 +213,18 @@ do not apply to this deliberate review of the report-creation interaction.
   subtotals. No usage means unknown spend, not a free turn. Subscription bills
   and API-equivalent estimates must not be conflated. The example uses a frozen
   historical card; its rates are not freshly verified by the reviewer.
+- Preserve whether cache counters were recorded, including explicit zero.
+  Missing counters are not measured zero. For missing reads, a point estimate
+  may assume reuse of the previous request's input only for the same source,
+  harness, session and model, nonshrinking input, and a positive gap of at most
+  five minutes. Cap it at available inclusive input. Label this append-only
+  context heuristic, not a verified prefix match or cache hit; assume no unknown
+  writes for that point estimate. Also show min/max retail cost by allocating
+  unknown input among fresh/read/write rates. Without eligible prior context,
+  show only the range, not an arbitrary percentage. Bounds are sensitivity
+  limits, not confidence intervals. Never change observed usage to inferred usage.
+  Claude fresh-only input with missing cache components has an unknown inclusive
+  total; do not price it as if the missing tokens were zero.
 - Per-turn accounting retains every genuine human input. Match native turn IDs
   within a harness/conversation first. Shared IDs use the preceding input and
   explicitly label this inferred split. Without an ID, anchor to the earliest
@@ -215,11 +245,27 @@ assigned in normalized chronological/source order; review them after selecting s
 All references are validated. Responses must follow the input in the same session.
 Each input ID may appear in at most one decision; combine multiple observations
 about the same input in that decision's analysis.
-Sample interpretation is checked in under `examples/creation-annotations.json`.
+Self-contained annotation example (replace the IDs with those in the evidence):
+
+```json
+{
+  "summary": "The human set the feature scope; completion remains unverified.",
+  "decisions": [
+    {
+      "input": "H001",
+      "title": "Feature scope",
+      "category": "Scope",
+      "analysis": "The human specified the required behavior."
+    }
+  ]
+}
+```
+
+Checkout examples are not included in the temporary annotation workspace.
 
 ## Report and player
 
-The design retains the Venn navy transport deck, teal human markers, gold
+The design retains the navy transport deck, teal human markers, gold
 direction markers, evidence cards, typography, and responsive layout. Assets are
 local copies originating from the original project's `session-analysis/scripts/playback`.
 They live in `assets/`; the standalone repository does not require the original workspace.
@@ -228,15 +274,31 @@ Metrics and replay data come from logs; qualitative narrative comes from the
 agent's evidence-linked annotations.
 
 The report includes coverage, metrics/model mix, activity-bin sensitivity,
-evidence-backed directions, limitations, and the full visible conversation record.
+and evidence-backed directions. Session details/warnings, hourly activity and per-turn spend are
+collapsed, scrollable tables; session dates lead each source row. Native metadata
+provides session starts, with explicitly labeled first-event fallbacks.
+The full conversation stays in the player rather than a duplicated report section.
+Direction analysis scrolls independently on screen and expands fully for printing.
+Keep provenance hashes, detailed pricing assumptions and limitations in supporting
+JSON, without report footnotes. PDF output expands these detail tables without
+scroll clipping.
 It embeds `player.html` in HTML and uses a static timeline preview in the PDF.
 All generated text is HTML-escaped. Recorded text is never interpreted as HTML.
 
 Player enhancements:
 
+- Manual navigation only; no play/pause, speed controls or Space shortcut.
+- A date-sorted session picker shows start dates, harnesses and prompt previews.
+  Session/day/harness filters scope messages and visible-range usage, not overall totals.
 - Right-aligned, arrow-only previous/next **message** buttons beside the transcript,
   traversing both human inputs and assistant updates; accessible labels and
-  existing top-level input controls remain.
+  existing top-level input controls remain. The timeline cursor follows the selected
+  message, panning zoomed views and scrolling narrow timeline viewports as needed.
+  Keep the heading, message position and arrows on one row, with a color highlight
+  that fades on release, not a depression effect. Message and direction panels have stable heights
+  and independent overflow so navigation does not shift the page or full log.
+  Clicking a log row preserves its scroll position; navigation from other controls
+  can reveal the active log row.
 - Drag across the timeline in either direction to zoom to a selected interval.
   A native horizontal scrollbar pans the zoomed window across the selected scope.
   Clicks still seek or select markers; cancelled drags preserve the current view.
@@ -245,18 +307,27 @@ Player enhancements:
   seconds for narrow ranges. Timezone abbreviations follow each event's date.
 - The full transcript remains searchable outside a zoomed window; selecting an
   out-of-window message recenters the window without dropping source records.
-- Same-conversation, no-future-response display; undated exports remain outside
+- Selecting a prompt lists all its recorded assistant responses with individual
+  timestamps and source IDs, using recorded turn IDs or matching request ownership
+  before inferred same-conversation proximity. Replies remain together even across
+  a zoom/day boundary. Selecting an assistant message highlights and reveals it
+  without hiding the other replies; an unattributed message is shown alone, without
+  borrowing another prompt. Cache response rows within a turn and scroll only the
+  response panel when revealing a selected reply.
+  Undated exports remain outside
   the clock. No dated records means an explicitly untimed viewer, not a fake epoch.
 - Entire-session and zoom-window model calls, inclusive input/output tokens,
-  estimated USD and pricing coverage; the window follows day/harness filters.
+  estimated USD and pricing coverage; the window follows session/day/harness filters.
   Keep totals in one compact strip, hiding the visible-range subtotal when it
   duplicates the full session. Move model tables, pricing and attribution into
   progressive-disclosure details. Attach model/cost/token footers directly below
   user prompts, including full-log entries; do not charge assistant rows again.
   A navigable per-input ledger and the selected turn show complete recorded-turn
   usage, model names, costs, and ownership methods. Usage metrics intentionally
-  include later recorded calls, not just playback-to-date; this does not reveal
-  future assistant text. Undated requests count only in session/turn totals.
+  include later recorded calls, not just the selected clock position.
+  Costs display cents while saved JSON retains full precision. Model details
+  split costs into fresh input, cache reads, cache writes and output when known.
+  Undated requests count only in session/turn totals.
   Embed pricing rates, dates, sources, cache TTL conventions and assumptions so
   the standalone file remains auditable offline.
 
@@ -267,5 +338,8 @@ messages versus agent handbacks, export code fences, missing timestamps, and bad
 schemas. Run verification reconciles normalized counts, evidence references,
 source hashes, all visible message text, and embedded data. Chromium checks report
 and player errors, offline requests, first/last positions, arrow navigation, drag
-zoom, native scrollbar panning/reset, clock ticks, search, filters, and mobile overflow. PDF must be a nonempty
+zoom, native scrollbar panning/reset, time labels, manual seeking, search, filters, and mobile overflow. PDF must be a nonempty
 PDF. Do not publish if any check fails. Never upload logs or auto-install extractors.
+Batch browser snapshots and filter sweeps, retaining every message and filter check
+and Python-side accounting reconciliation. Offline pages wait for completed loads,
+not an additional network-idle interval.

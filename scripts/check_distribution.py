@@ -21,7 +21,7 @@ def check(directory):
                 or any(part == ".env" or part.startswith(".env.") for part in path.parts)):
             raise ValueError(f"Unexpected private/history artifact in distribution: {name}")
     required = (
-        "__init__.py", "__main__.py", "review.py", "sources.py", "accounting.py",
+        "__init__.py", "__main__.py", "review.py", "sources.py", "accounting.py", "retail-pricing.json",
         "discovery.py", "render.py", "assets/player.html", "assets/player.css",
         "assets/player.js", "README.md", "DESIGN.md", "prompts/review.md",
         ".github/agents/agent-session-insights.agent.md",

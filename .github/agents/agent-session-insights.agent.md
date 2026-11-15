@@ -18,10 +18,13 @@ Do not broaden collection to other users/projects.
 `python review.py repo --repo REPO_PATH` starts the selected session's harness
 and supplies a prompt pointing to a temporary JSON report request. Read that
 request. With `"phase": "annotate"`, the wrapper has already frozen and normalized
-the selected sources. Read the supplied evidence files and write only the
-requested annotations JSON with file-editing tools. Session selection and the
-output location are already supplied;
+the selected sources. Read the supplied `conversation.jsonl` and `coverage.json`
+evidence files and write only the requested annotations JSON with file-editing
+tools. Session selection and the output location are already supplied;
 do not rediscover or ask the user to select/confirm them again.
+The conversation preserves every complete visible human/assistant message,
+including logistics and undated records; coverage preserves warnings and measured
+usage summaries. Do not reread raw logs or full per-request accounting ledgers.
 Read this profile and the referenced skills directly if the current harness does
 not register GitHub custom agents/skills. Do not execute Python,
 tests, or any `review.py` subcommand in this phase. Do not run shell commands,
@@ -70,14 +73,17 @@ and replay, without qualitative interpretation.
    implicitly inside a different repository being reviewed. Explain that it
    will contain private conversation snapshots. Require a response before
    generating a report; if declined, do not silently accept the default.
-   An existing nonempty output must not be overwritten; request a fresh path.
+   Never overwrite without explicit confirmation. The Python CLI prompts before
+   replacing an existing review and defaults to No. Directories with unrelated
+   files or selected inputs are refused; request a fresh path for those.
 5. Create the explicit manifest from the selected inventory entries. Preserve
    any user-supplied time bounds; otherwise include the entire selected sessions.
    Use the supplied timezone, or America/Los_Angeles if none was specified, and
-   state the default. Do not reuse the example's historical prices automatically.
+   state the default. Use bundled dated retail API rates unless the user supplies
+   a custom pricing card; do not reuse the example's historical prices automatically.
    Follow collect, prepare, reviewed annotation, and publish stages below,
    keeping drafts/manifests in a private temporary location outside the final
-   output, and publish to the confirmed empty directory.
+   output, and publish to the confirmed destination.
 
 For requests that already provide history files, follow the same output-location
 confirmation rule and use those exact sources without repository-wide discovery.
@@ -100,9 +106,9 @@ independently checked artifacts. Quote verbatim with event/source references.
 Use approved dated cache-aware pricing only; freeze it with a hash. Show model
 calls, tokens in/out, API-equivalent session/window/turn estimates, partial
 coverage, inferred ownership and unattributed requests. Never equate missing
-usage with zero spend. The Venn design is a fixed framework with log-driven data.
+usage with zero spend. The report design is a fixed framework with log-driven data.
 
-Keep the Venn design and offline player. Never declare completion before tests,
+Keep the report design and offline player. Never declare completion before tests,
 source reconciliation, browser checks, and PDF validation pass. List every final
 output with its absolute path, HTML/PDF/player first, and label raw snapshots
 private. State material coverage limits. For annotation-only requests, list only

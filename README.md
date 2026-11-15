@@ -3,7 +3,7 @@
 A local-first reviewer agent and reproducible analysis pipeline for Copilot CLI,
 Claude Code, Codex, Cursor exports, and Replit conversation exports. Reports and
 standalone players show the conversation, timeline, model usage, token accounting,
-and evidence-linked analysis in a fixed Venn visual framework.
+and evidence-linked analysis in a fixed visual framework.
 
 ## Install a published release
 
@@ -60,8 +60,10 @@ Output defaults to **`agent-session-reports/<repo-name>` in your current working
 directory**, for example `agent-session-reports/my-project`.
 Completion lists only `report.html`, `report.pdf`, and the standalone `player.html`.
 Supporting evidence and verification files remain in the output directory.
-Existing nonempty directories
-are never overwritten; use a fresh `--output` path for each report.
+Existing reviews prompt `Overwrite? [y/N]?`; only `y` or `yes` replaces them.
+An empty answer or closed stdin leaves the report unchanged. Directories with
+unrelated files are refused. Confirmed replacement removes the old report before
+generation; use a fresh `--output` path to retain it if generation fails.
 
 Open the default report in your browser:
 
@@ -119,7 +121,9 @@ selected session's harness performs the review.
 
 Without `--output`, the Polypost example writes to
 **`.\agent-session-reports\polypost` under your current working directory**.
-Existing nonempty output directories are never overwritten.
+Existing reviews require overwrite confirmation (default **No**).
+The prompt appears before session discovery or manifest loading. Existing files
+are removed only after the selected-input safety checks pass.
 `prepare` and `run` always require an explicit `--output`.
 
 ### Manifest-based and staged workflows
@@ -224,8 +228,9 @@ Open **`tmp/creation-review/report.html`** for the report with embedded playback
 **`tmp/creation-review/player.html`** for the standalone replay. No server, API key,
 LLM call or GPU is needed. On Linux, if browser system libraries are missing, use
 `python -m playwright install --with-deps chromium` (requires system-install privileges).
-Choose a new output directory for each run: the pipeline refuses to overwrite a
-nonempty one.
+Existing reviews require overwrite confirmation (default **No**). Choose a fresh
+destination when using frozen inputs inside an existing report; those inputs
+cannot be overwritten.
 
 The manifest uses only repository-local files:
 
@@ -333,8 +338,8 @@ match or asks you to select if several match; you can also explicitly request al
 After selection, if you have not supplied an output path, it prompts with
 **`agent-session-reports/<repo-name>` in the current workspace** as the suggestion.
 The agent then prepares evidence, adds reviewed qualitative annotations, and
-generates the HTML report, PDF and offline player. Existing nonempty results are
-never overwritten.
+generates the HTML report, PDF and offline player. Existing results require
+explicit overwrite confirmation; the Python CLI defaults to **No**.
 
 ### Automatic Python command
 
@@ -355,8 +360,11 @@ The installed CLI must be on `PATH` and signed in; its normal permissions,
 model configuration and charges apply. Copilot selects the bundled custom agent;
 Claude and Codex receive instructions to read the same reviewer profile and skills.
 Python freezes the selected logs before launching the harness. The agent only
-reads the prepared evidence and writes the annotations JSON; Python then validates
-the references, renders the report and performs browser/PDF checks.
+reads a compact, complete visible conversation and coverage summary, without
+duplicated request/turn accounting ledgers, and writes the annotations JSON.
+Python verifies that frozen evidence is unchanged, validates the references, and
+reuses the prepared data to render the report and perform browser/PDF checks.
+Full normalized events, accounting and private snapshots remain in the output.
 
 The harness starts in a private temporary workspace containing the bundled
 reviewer profile, skills and documentation, not in the installation directory.
@@ -412,17 +420,19 @@ python review.py repo --repo C:\Source\my-project `
 | `--all` | Combine every matching session, still filtered by `--harness` if supplied. |
 | `--session ID` | Select an ID or `harness:ID`; repeat for multiple sessions. Mutually exclusive with `--all`. |
 | `--harness NAME` | Search only `copilot`, `claude`, or `codex` instead of detecting all three. |
-| `--output PATH` | Empty destination directory; defaults to `agent-session-reports/<repo-name>` in the caller's working directory. |
+| `--output PATH` | Destination directory; confirms replacement of an existing review (default No). Defaults to `agent-session-reports/<repo-name>` in the caller's working directory. |
 | `--noagent` | Skip harness launch and qualitative annotations; render directly in Python. |
 | `--root PATH` | Override the native history directory; requires `--harness`. |
 | `--timezone ZONE` | IANA report timezone; defaults to `America/Los_Angeles`. |
-| `--pricing PATH` | Optional approved, dated pricing card; without one, estimated spend is unavailable. |
+| `--pricing PATH` | Override the bundled dated retail API pricing card. |
 
 `--session` also accepts a bare ID if it uniquely identifies a file.
 `--all` includes every matching session in the discovery order, honors `--harness`,
 and works with `--noagent`. It cannot be combined with `--session`.
-`--timezone` defaults to `America/Los_Angeles`; `--pricing` optionally supplies an
-approved, dated rate card. Without one, spend remains unknown.
+`--timezone` defaults to `America/Los_Angeles`. Reports estimate retail
+API-equivalent cost automatically using bundled, dated public rates;
+`--pricing` supplies an override. Unknown models or missing total usage remain
+unpriced, not free.
 **`--noagent`** disables harness launch and qualitative interpretation, retaining
 the deterministic Python-only report. There is no silent fallback to this mode
 if the selected harness is missing or fails. The lower-level `prepare` and `run`
@@ -464,19 +474,41 @@ are relative to the manifest. Each source needs `harness`, `path`, and `session`
 Supported harness identifiers: `copilot`, `claude`, `codex`, `cursor`, `replit`.
 Optional `start` and `end` are inclusive timezone-aware ISO timestamps.
 An optional `annotations` path supplies human/agent-reviewed interpretation.
-An optional `pricing` path supplies a dated, cache-aware USD-per-million-token
+By default, the bundled [`retail-pricing.json`](retail-pricing.json) supplies
+dated standard global retail API rates. No report-time network access is needed.
+An optional `pricing` path overrides it with a dated, cache-aware USD-per-million-token
 rate card (see [`examples/pricing-rates.json`](https://github.com/markrussinovich/agent-session-insights/blob/main/examples/pricing-rates.json) for the schema). The creation
 example uses that historical snapshot, not newly verified prices. The card and
 its SHA-256 are preserved with the results.
 
-The player shows model calls, input/output tokens, estimated full-session spend,
-spend in the zoomed/time-and-harness-filtered area, and a complete per-input ledger.
+Recorded input/output and cache counters take precedence, including explicit zero.
+When cache reads are missing, the report can estimate reuse from the preceding
+same-model request in the same source/session within five minutes, provided the
+context has not shrunk. This assumes append-only context, not a verified cache
+hit. Such point estimates are labeled and accompanied by a cost range; when
+context evidence is insufficient, only the range is shown. Ranges cover possible
+fresh/cache-read/cache-write allocations, not statistical confidence intervals.
+Missing total usage remains unknown; transcripts alone are not token meters.
+Costs exclude subscriptions, tools, taxes and discounts and do not reconstruct
+an invoice. Rerendering a saved manifest uses its frozen rates.
+
+The player uses manual navigation, without animated playback. Select a session by
+start date, harness and prompt preview; selecting an input shows its recorded reply.
+It shows model calls, input/output tokens, estimated full-session spend,
+spend in the session/time/harness-filtered area, and a complete per-input ledger.
 Session totals appear once in a compact strip; a visible-range subtotal appears
-only when the time/harness scope differs. Model/pricing details are collapsed.
+only when the session/time/harness scope differs. Model/pricing details are collapsed.
+Costs display cents (for example, `$1.46`), with full precision preserved in JSON.
+Model details break costs into fresh input, cache reads, cache writes and output.
 Each prompt has an attached model/cost/token footer, also shown on user entries
-in the full session log and beneath prompts in the HTML/PDF conversation record.
+in the player's full session log. The report does not duplicate that transcript.
+Session details/warnings, hourly activity and per-turn spend are collapsed by default, with
+scrollable tables when expanded. Session start dates appear in the leftmost
+column; first-event dates are labeled when native start metadata is unavailable.
+Pricing assumptions and integrity hashes remain in the supporting JSON, not
+in report footnotes.
 Selected-turn totals cover the whole recorded turn, not just the visible window or
-elapsed playback. Input includes cached reads/writes; costs subtract them before
+the selected clock position. Input includes cached reads/writes; costs subtract them before
 pricing fresh input and apply per-request long-context premiums. Recorded turn IDs
 are preferred; inferred ownership and unattributed requests are labeled.
 Missing model prices produce partial subtotals, never invented zero-dollar bills.

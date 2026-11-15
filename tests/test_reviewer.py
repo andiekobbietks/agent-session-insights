@@ -5,11 +5,12 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sources import epoch, parse, redact, timestamp
 from review import analyze, annotations, collect
-from render import payload, player_html, public_pdf_links, publish, report_html, spend_matches_display
+from render import duration, payload, player_html, public_pdf_links, publish, report_html, spend, spend_matches_display
 from scripts.prepare_pages import PUBLIC_FILES, prepare
 
 TIME = "2026-11-07T17:06:22.211Z"
@@ -66,6 +67,11 @@ class SourceTests(unittest.TestCase):
         self.assertTrue(spend_matches_display("$0.318329", 0.3183295))
         self.assertTrue(spend_matches_display("$1.463448", 1.4634475))
         self.assertFalse(spend_matches_display("$0.318328", 0.3183295))
+        total = {"calls": 67, "priced_calls": 67, "unpriced_calls": 0, "estimated_usd": 1.4626616,
+                 "estimated_usd_min": 1.4626616, "estimated_usd_max": 1.4626616}
+        self.assertEqual(spend(total), "$1.46")
+        self.assertTrue(spend_matches_display("$1.46", total["estimated_usd"]))
+        self.assertFalse(spend_matches_display("$1.47", total["estimated_usd"]))
 
     def test_pages_staging_excludes_private_files_and_rejects_unreviewed_content(self):
         source = self.root / "review"
@@ -122,6 +128,311 @@ class SourceTests(unittest.TestCase):
         events = self.load("copilot", records)
         self.assertEqual([e["kind"] for e in events], ["user", "usage"])
         self.assertEqual(events[1]["input"], 100)
+
+    def test_missing_cache_is_distinct_from_explicit_zero_in_native_logs(self):
+        for harness, records in (
+            ("copilot", [
+                {"type": "session.usage_record", "id": "one", "data": {"usage": {
+                    "inputTokens": 100, "outputTokens": 10}}},
+                {"type": "session.usage_record", "id": "two", "data": {"usage": {
+                    "inputTokens": 100, "outputTokens": 10, "cacheReadTokens": 0, "cacheWriteTokens": 0}}},
+            ]),
+            ("codex", [
+                {"type": "token_usage_record", "payload": {"thread_id": "test", "response_id": "one",
+                 "usage": {"input_tokens": 100, "output_tokens": 10}}},
+                {"type": "token_usage_record", "payload": {"thread_id": "test", "response_id": "two",
+                 "usage": {"input_tokens": 100, "output_tokens": 10,
+                           "cached_input_tokens": 0, "cache_write_input_tokens": 0}}},
+            ]),
+        ):
+            with self.subTest(harness=harness):
+                missing, zero = self.load(harness, records)
+                self.assertFalse(missing["cached_read_known"])
+                self.assertFalse(missing["cache_write_known"])
+                self.assertTrue(zero["cached_read_known"])
+                self.assertTrue(zero["cache_write_known"])
+        usage = self.load("claude", [{"type": "assistant", "message": {
+            "id": "one", "content": [], "usage": {"input_tokens": 100, "output_tokens": 10}}}])[0]
+        self.assertFalse(usage["input_complete"])
+
+    def test_bundled_retail_rates_are_frozen_and_price_without_manifest_override(self):
+        source = self.root / "source.jsonl"
+        source.write_text(json.dumps({"type": "session.usage_record", "id": "one",
+                                     "data": {"usage": {"model": "gpt-6.1-sol", "inputTokens": 1000,
+                                                       "outputTokens": 100}}}) + "\n")
+        manifest = self.root / "manifest.json"
+        manifest.write_text(json.dumps({"sources": [{"harness": "copilot", "session": "test",
+                                                     "path": str(source)}]}))
+        _, collection, events = collect(manifest, self.root / "report")
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+        self.assertIsNone(analysis["cache_read_tokens"])
+        self.assertIsNone(analysis["cache_write_tokens"])
+        self.assertEqual(analysis["accounting"]["total"]["priced_calls"], 1)
+        self.assertGreater(analysis["accounting"]["total"]["estimated_usd_max"], 0)
+        self.assertIn("range", analysis["cost"])
+        bundled = Path(__file__).resolve().parents[1] / "retail-pricing.json"
+        self.assertEqual((self.root / "report" / "pricing.json").read_bytes(), bundled.read_bytes())
+
+    def test_report_overview_shows_cost_period_and_user_terminology_without_changing_sources(self):
+        from playwright.sync_api import sync_playwright
+        collection = {"title": "Overview", "timezone": "America/Los_Angeles",
+                      "sources": [], "missing_harnesses": {}, "warnings": [],
+                      "pricing": {"card": {
+                          "currency": "USD", "unit": "per million tokens", "verified_on": "2026-11-07",
+                          "sources": {"test": "https://example.com/pricing"},
+                          "models": {"m": {"input": 2, "cache_read": 0.1, "cache_write": 2.5,
+                                           "output": 10, "source": "test"}}}}}
+        quoted = "The human said: human inputs must stay verbatim."
+        first = "2026-10-31T17:06:22.211Z"
+        messages = [
+            {"id": "H001", "kind": "user", "text": quoted, "timestamp": first, "t": epoch(first)},
+            {"id": "R001", "kind": "assistant", "text": "Response", "timestamp": TIME, "t": epoch(TIME)},
+            {"id": "H002", "kind": "user", "text": "Undated input", "timestamp": None, "t": None},
+        ]
+        usage = {"id": "A001", "identity": "call", "kind": "usage", "timestamp": TIME, "t": epoch(TIME),
+                 "model": "m", "input": 700000, "output": 6000, "cached_read": 0, "cache_write": 0}
+        unknown = {**usage, "id": "A002", "identity": "unknown", "model": "unknown"}
+        cases = [
+            ([usage], "$1.46"),
+            ([{**usage, "cached_read_known": False, "cache_write_known": False}], "Range $0.13 - $1.81"),
+            ([usage, unknown], "$1.46 + unpriced calls"),
+            ([unknown], "Unpriced"),
+            ([], "Unknown (no recorded usage)"),
+        ]
+        interpretation = {"summary": "The human reviewed human inputs.", "decisions": [
+            {"input": "H001", "title": "Human direction", "category": "Human scope",
+             "analysis": "The human set the scope."}]}
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            for calls, expected in cases:
+                with self.subTest(cost=expected):
+                    events = [{**event, "harness": "copilot", "session": "test", "source": f"S01:{i}"}
+                              for i, event in enumerate(messages + calls, 1)]
+                    if not calls:
+                        events = [{**event, "timestamp": None, "t": None} for event in events]
+                    analysis = analyze(collection, events, interpretation)
+                    page.set_content(report_html(collection, events, analysis))
+                    self.assertEqual(page.locator(".stats .stat").count(), 5)
+                    self.assertEqual(page.locator(".stat.cost b").inner_text(), expected)
+                    self.assertEqual(page.locator("header p").last.inner_text(), "The user reviewed user inputs.")
+                    self.assertEqual(page.locator(".decision .quote").inner_text(), quoted)
+                    self.assertEqual(page.locator(".decision h3").inner_text(), "User direction")
+                    self.assertEqual(page.locator(".decision p").last.inner_text(), "The user set the scope.")
+                    period = page.locator(".report-period").inner_text()
+                    if calls:
+                        self.assertIn("2026-10-31 10:06:22 PDT - 2026-11-07 09:06:22 PST", period)
+                        self.assertIn("undated records also included", period)
+                        self.assertEqual(page.locator("#wall-time").inner_text(), "7d (dated records only)")
+                        self.assertEqual(page.locator("#total-turn-time").inner_text(), "7d (partial)")
+                        self.assertIn("1 of 2 turns timed", page.locator(".timing-summary").inner_text())
+                    else:
+                        self.assertIn("Unknown (no reliable timestamps)", period)
+                        self.assertEqual(page.locator("#wall-time").inner_text(), "Unknown")
+                        self.assertEqual(page.locator("#total-turn-time").inner_text(), "Unknown")
+                    data = payload(events, analysis)
+                    prompt = next(row for row in data["humans"] + data["undated"] if row["id"] == "H001")
+                    self.assertEqual(prompt["text"], quoted)
+                    self.assertEqual(prompt["moment"]["note"], "The user set the scope.")
+                    for width in (1280, 390):
+                        page.set_viewport_size({"width": width, "height": 900})
+                        self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)
+                        if width == 1280:
+                            for media in ("screen", "print"):
+                                page.emulate_media(media=media)
+                                positions = page.locator(".stat").evaluate_all("""cards => cards.map(card => ({
+                                    value:card.querySelector('b').getBoundingClientRect().top,
+                                    label:card.querySelector('span').getBoundingClientRect().bottom
+                                }))""")
+                                for key in ("value", "label"):
+                                    coordinates = [position[key] for position in positions]
+                                    self.assertLessEqual(max(coordinates) - min(coordinates), 1)
+                            page.emulate_media(media="screen")
+            browser.close()
+
+    def test_duration_display_rounds_to_whole_seconds_with_unit_carry(self):
+        for milliseconds, expected in [
+            (263621709, "3d 1h 13m 42s"),
+            (960201, "16m"),
+            (59999, "1m"),
+            (86399999, "1d"),
+            (201, "0s"),
+            (500, "1s"),
+            (0, "0s"),
+        ]:
+            with self.subTest(milliseconds=milliseconds):
+                self.assertEqual(duration(milliseconds), expected)
+
+    def test_duration_totals_sum_overlapping_turns_and_include_wall_gaps(self):
+        collection = {"title": "Timing", "timezone": "UTC", "sources": [],
+                      "missing_harnesses": {}, "warnings": []}
+        start = epoch(TIME)
+        events = [
+            {"id": "H001", "kind": "user", "t": start, "session": "one", "turn_id": "first"},
+            {"id": "H002", "kind": "user", "t": start + 1000, "session": "one", "turn_id": "second"},
+            {"id": "R003", "kind": "assistant", "t": start + 2000, "session": "one", "turn_id": "first"},
+            {"id": "R004", "kind": "assistant", "t": start + 3000, "session": "one", "turn_id": "second"},
+            {"id": "H005", "kind": "user", "t": start + 500, "session": "two"},
+            {"id": "R006", "kind": "assistant", "t": start + 2000, "session": "two"},
+            {"id": "H007", "kind": "user", "t": start + 60000, "session": "one"},
+        ]
+        events = [{**event, "harness": "copilot", "timestamp": timestamp(event["t"]),
+                   "source": f"S01:{i}", "text": event["id"]}
+                  for i, event in enumerate(sorted(events, key=lambda event: event["t"]), 1)]
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+        self.assertEqual(analysis["timing"]["wall_ms"], 60000)
+        self.assertEqual(analysis["timing"]["total_turn_ms"], 5500)
+        self.assertEqual(analysis["timing"]["timed_turns"], 3)
+        self.assertEqual(analysis["timing"]["total_turns"], 4)
+        html = report_html(collection, events, analysis)
+        self.assertIn('id="wall-time">1m<', html)
+        self.assertIn('id="total-turn-time">6s (partial)<', html)
+        self.assertIn("3 of 4 turns timed", html)
+        self.assertIn("overlaps summed", html)
+
+    def test_report_chart_and_section_spacing_are_compact(self):
+        from playwright.sync_api import sync_playwright
+        collection = {"title": "Layout", "timezone": "America/Los_Angeles",
+                      "sources": [], "missing_harnesses": {}, "warnings": []}
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 1000})
+            for count in (1, 8):
+                events = [{"id": f"A{i:03d}", "identity": str(i), "kind": "usage", "t": None,
+                           "timestamp": None, "harness": "copilot", "session": "test", "source": f"S01:{i}",
+                           "model": f"model-{i}", "input": 100, "output": 10,
+                           "cached_read": 0, "cache_write": 0} for i in range(count)]
+                analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+                page.set_content(report_html(collection, events, analysis))
+                self.assertEqual(page.locator("header .eyebrow").inner_text(), "AGENT SESSION INSIGHTS")
+                chart = page.locator(".chart").bounding_box()
+                self.assertAlmostEqual(chart["height"] / chart["width"], count * 28 / 900, places=3)
+                if count == 1:
+                    self.assertLess(chart["height"], 40)
+                section = page.locator("#usage").bounding_box()
+                heading = page.locator("#usage h2").bounding_box()
+                self.assertLessEqual(heading["y"] - section["y"], 18)
+            browser.close()
+
+    def test_collection_preserves_session_start_separately_from_selected_bounds(self):
+        source = self.root / "native.jsonl"
+        later = "2026-11-07T17:07:22.211Z"
+        source.write_text("\n".join(json.dumps(record) for record in [
+            {"type": "session.start", "timestamp": TIME, "data": {"sessionId": "native"}},
+            {"type": "user.message", "id": "u1", "timestamp": later, "data": {"content": "Scoped request"}},
+        ]))
+        exported = self.root / "export.json"
+        exported.write_text(json.dumps([{"role": "user", "timestamp": later, "content": "Exported request"}]))
+        undated = self.root / "undated.json"
+        undated.write_text(json.dumps([{"role": "user", "content": "Undated request"}]))
+        manifest = self.root / "manifest.json"
+        manifest.write_text(json.dumps({"sources": [
+            {"harness": "copilot", "session": "native", "path": str(source), "start": later},
+            {"harness": "cursor", "session": "export", "path": str(exported)},
+            {"harness": "replit", "session": "undated", "path": str(undated)},
+        ]}))
+        _, collection, _ = collect(manifest, self.root / "report")
+        native, fallback, unknown = collection["sources"]
+        self.assertEqual(native["started_at"], TIME)
+        self.assertEqual(native["start"], later)
+        self.assertEqual(native["started_at_basis"], "Session metadata")
+        self.assertEqual(fallback["started_at"], later)
+        self.assertIn("session start unavailable", fallback["started_at_basis"])
+        self.assertIsNone(unknown["started_at"])
+
+    def test_direction_analysis_scrolls_on_screen_and_prints_without_clipping(self):
+        from playwright.sync_api import sync_playwright
+        collection = {"title": "Long directions", "timezone": "UTC", "sources": [],
+                      "missing_harnesses": {}, "warnings": []}
+        events = [{"id": f"H{i:03d}", "kind": "user", "harness": "copilot", "session": "test",
+                   "source": f"S01:{i}", "text": f"Request {i}", "timestamp": TIME, "t": epoch(TIME)}
+                  for i in range(1, 21)]
+        decisions = [{"input": event["id"], "title": f"Direction {i}", "category": "Scope",
+                      "analysis": "An evidence-backed interpretation of the recorded request. " * 12}
+                     for i, event in enumerate(events, 1)]
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": decisions})
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_content(report_html(collection, events, analysis))
+            region = page.get_by_role("region", name="How the user shaped the work")
+            self.assertEqual(region.locator(".decision").count(), 20)
+            self.assertLessEqual(region.bounding_box()["height"], 420)
+            self.assertTrue(region.evaluate("(el) => el.scrollHeight > el.clientHeight"))
+            region.evaluate("(el) => el.scrollTop = el.scrollHeight")
+            self.assertGreater(region.evaluate("(el) => el.scrollTop"), 0)
+            page.emulate_media(media="print")
+            self.assertGreater(region.bounding_box()["height"], 420)
+            self.assertTrue(region.evaluate("(el) => el.clientHeight >= el.scrollHeight"))
+            browser.close()
+
+    def test_batched_filter_verification_rejects_incorrect_session_usage(self):
+        collection = {"title": "Filter verification", "timezone": "UTC", "sources": [],
+                      "missing_harnesses": {}, "warnings": []}
+        start = epoch(TIME)
+        events = []
+        for i, session in enumerate(("one", "two")):
+            common = {"harness": "copilot", "session": session, "timestamp": TIME}
+            events.append({**common, "id": f"H{i+1:03d}", "kind": "user", "t": start + i * 60000,
+                           "source": f"S01:{i*2+1}", "text": f"Input {session}"})
+            events.append({**common, "id": f"A{i+1:03d}", "identity": f"call-{i}", "kind": "usage",
+                           "t": start + i * 60000 + 1000, "source": f"S01:{i*2+2}", "text": "",
+                           "model": "unpriced", "input": 100, "output": 10, "cached_read": 0, "cache_write": 0})
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+        output = self.root / "incorrect-filter"
+        output.mkdir()
+
+        def faulty_player(data):
+            return player_html(data).replace("</body>", """<script>
+                document.getElementById('session').addEventListener('change', () => {
+                    if (JSON.parse(document.getElementById('session').value)[1] === 'two')
+                        document.getElementById('window-spend').textContent = '$999.00';
+                });
+            </script></body>""")
+
+        with patch("render.player_html", side_effect=faulty_player), self.assertRaisesRegex(AssertionError, "999"):
+            publish(output, collection, events, analysis)
+        self.assertFalse((output / "verification.json").exists())
+
+    def test_hundreds_of_sessions_and_turns_are_collapsed_without_pricing_footnotes(self):
+        from playwright.sync_api import sync_playwright
+        collection = {"title": "Large report", "timezone": "UTC", "missing_harnesses": {},
+                      "warnings": ["A coverage warning"] * 200,
+                      "sources": [{"id": f"S{i:02d}", "session": f"session-{i}",
+                                   "started_at": TIME, "started_at_basis": "Session metadata",
+                                   "start": None, "end": None, "raw_records": 10, "outside_interval": 0}
+                                  for i in range(1, 201)],
+                      "pricing": {"sha256": "f" * 64, "card": {
+                          "currency": "USD", "unit": "per million tokens", "verified_on": "2026-11-13",
+                          "models": {}, "sources": {}, "assumptions": ["Pricing footnote sentinel"]}}}
+        events = [{"id": f"H{i:03d}", "kind": "user", "harness": "copilot", "session": f"session-{i}",
+                   "source": f"S{i:02d}:1", "text": "Synthetic request", "timestamp": TIME, "t": epoch(TIME)}
+                  for i in range(1, 201)]
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+        html = report_html(collection, events, analysis)
+        self.assertNotIn("SHA-256", html)
+        self.assertNotIn("Frozen pricing", html)
+        self.assertNotIn("Pricing footnote sentinel", html)
+        self.assertNotIn("Evidence limits and method", html)
+        self.assertIn("Observed activity (not measured working time)", html)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 1000})
+            page.set_content(html)
+            for selector in ("#coverage-details", "#turn-spend-details", "#hourly-details"):
+                details = page.locator(selector)
+                self.assertFalse(details.evaluate("(el) => el.open"))
+                self.assertFalse(details.locator("table").is_visible())
+                details.locator("summary").click()
+                self.assertTrue(details.locator("table").is_visible())
+                self.assertLessEqual(details.locator(".detail-scroll").bounding_box()["height"], 420)
+                self.assertEqual(details.locator("tbody tr").count(), 1 if selector == "#hourly-details" else 200)
+            cells = page.locator("#coverage-details tbody tr").first.locator("td").all_text_contents()
+            self.assertEqual(cells[0], "2026-11-07 17:06 UTC")
+            self.assertIn("session-1", cells[1])
+            page.emulate_media(media="print")
+            self.assertGreater(page.locator("#coverage-details .detail-scroll").bounding_box()["height"], 420)
+            browser.close()
 
     def test_copilot_form_answers_and_recorded_request_links_exclude_reasoning(self):
         events = self.load("copilot", [
@@ -247,7 +558,9 @@ class SourceTests(unittest.TestCase):
                    "timestamp": None, "t": None}]
         collection = {"title": "<unsafe>", "timezone": "America/Los_Angeles",
                       "sources": [], "missing_harnesses": {}, "warnings": []}
-        analysis = analyze(collection, events, {"summary": "Unknown timing", "decisions": []})
+        analysis = analyze(collection, events, {"summary": "Unknown timing", "decisions": [
+            {"input": "H001", "title": "Unsafe example", "category": "Test", "analysis": "Escaped transcript"},
+        ]})
         data = payload(events, analysis)
         self.assertIsNone(data["meta"]["start"])
         self.assertEqual(len(data["undated"]), 1)
@@ -256,7 +569,7 @@ class SourceTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;", report_html(collection, events, analysis))
         self.assertEqual(epoch(TIME), 1794071182211)
 
-    def test_report_conversation_attaches_usage_only_to_user_prompts(self):
+    def test_report_does_not_duplicate_the_player_conversation(self):
         common = {"harness": "cursor", "session": "x", "timestamp": None, "t": None}
         events = [
             {**common, "id": "H001", "kind": "user", "source": "S01:1", "text": "Build it"},
@@ -268,12 +581,12 @@ class SourceTests(unittest.TestCase):
                       "sources": [], "missing_harnesses": {}, "warnings": []}
         analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
         html = report_html(collection, events, analysis)
-        human = html.split('<details id="H001" class="record">')[1].split("</details>")[0]
-        agent = html.split('<details id="R001" class="record">')[1].split("</details>")[0]
-        self.assertIn('class="record-usage"', human)
-        self.assertIn("m&lt;script&gt; · Estimated Unpriced · 25 in · 5 out", human)
-        self.assertGreater(human.index('class="record-usage"'), human.index(">Build it</div>"))
-        self.assertNotIn('class="record-usage"', agent)
+        self.assertNotIn("Complete visible conversation", html)
+        self.assertNotIn('id="record"', html)
+        self.assertIn('src="player.html"', html)
+        data = payload(events, analysis)
+        self.assertEqual([row["text"] for row in data["undated"]], ["Build it", "Done"])
+        self.assertIn("m&lt;script&gt;", html)
 
     def test_bundled_creation_session_runs_without_original_workspace(self):
         repository = Path(__file__).resolve().parents[1]

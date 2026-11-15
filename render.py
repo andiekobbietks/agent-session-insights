@@ -1,4 +1,4 @@
-"""Venn-style offline reports, standalone playback, PDF, and browser validation."""
+"""Offline reports, standalone playback, PDF, and browser validation."""
 from datetime import datetime, timedelta
 from decimal import Decimal
 from html import escape
@@ -19,22 +19,23 @@ else:
 ASSETS = Path(__file__).parent / "assets"
 REPORT_CSS = """
 :root{--ink:#203547;--muted:#637689;--gold:#c58c2f;--teal:#2c8582;--navy:#102637}
-*{box-sizing:border-box}body{font:15px/1.6 system-ui,sans-serif;color:var(--ink);background:#f3f6f8;margin:0;overflow-wrap:anywhere}
-main{max-width:1120px;margin:32px auto;padding:0 28px}header{background:var(--navy);color:#ecf4f8;border-radius:14px;padding:28px}
-h1{font-size:34px;line-height:1.15;letter-spacing:-.03em;margin:8px 0 16px}h2{font-size:22px;border-bottom:1px solid #dde5eb;padding-bottom:8px;margin:28px 0 16px}
-h3{font-size:17px;margin:8px 0}.eyebrow{font-size:11px;font-weight:750;letter-spacing:.16em}.muted{color:var(--muted)}
-section{background:white;border:1px solid #dde5eb;border-radius:10px;padding:24px;margin:20px 0}a{color:#1f6b83}header a{color:#ffd58c}
-nav{display:flex;flex-wrap:wrap;gap:16px;margin:20px 0;font-size:13px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}
-.stat{background:white;border:1px solid #dde5eb;border-radius:10px;padding:18px}.stat b{display:block;color:var(--teal);font-size:27px}.stat span{font-size:12px}
-table{border-collapse:collapse;width:100%;font-size:12px}td,th{padding:9px;border-bottom:1px solid #dde5eb;text-align:left;vertical-align:top}th{background:#edf3f6}.table-scroll{overflow:auto}
-.decision{border-left:3px solid var(--gold);padding:4px 16px;margin:24px 0}.quote,.message{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.65 system-ui,sans-serif;background:#f5f8fa;padding:14px;border-left:3px solid var(--teal)}
+*{box-sizing:border-box}body{font:15px/1.45 system-ui,sans-serif;color:var(--ink);background:#f3f6f8;margin:0;overflow-wrap:anywhere}
+main{max-width:1120px;margin:20px auto;padding:0 24px}header{background:var(--navy);color:#ecf4f8;border-radius:14px;padding:18px}
+h1{font-size:34px;line-height:1.15;letter-spacing:-.03em;margin:6px 0 10px}h2{font-size:22px;border-bottom:1px solid #dde5eb;padding-bottom:5px;margin:12px 0 8px}section>h2:first-child{margin-top:0}
+h3{font-size:17px;margin:8px 0 5px}p,ul,ol{margin:8px 0}.eyebrow{font-size:11px;font-weight:750;letter-spacing:.16em}.muted{color:var(--muted)}
+section{background:white;border:1px solid #dde5eb;border-radius:10px;padding:16px;margin:12px 0}a{color:#1f6b83}header a{color:#ffd58c}
+nav{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;font-size:13px}.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:12px 0}
+.stat{display:flex;flex-direction:column;justify-content:space-between;background:white;border:1px solid #dde5eb;border-radius:10px;padding:12px}.stat b{display:block;color:var(--teal);font-size:27px}.stat span{font-size:12px}
+.report-period{font-size:12px;margin:6px 0 12px}.timing-summary{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 24px;margin:8px 0;font-size:14px}.timing-summary strong{color:var(--teal);font-size:17px}.timing-summary small{font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:12px}td,th{padding:6px 8px;border-bottom:1px solid #dde5eb;text-align:left;vertical-align:top}th{background:#edf3f6}.table-scroll{overflow:auto}
+.decision{border-left:3px solid var(--gold);padding:4px 12px;margin:12px 0}.quote,.message{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.45 system-ui,sans-serif;background:#f5f8fa;padding:10px;border-left:3px solid var(--teal)}
 .agent{border-left-color:#839daf}.source{font-size:11px;color:var(--muted)}.playback-frame{width:100%;height:1250px;border:1px solid #dde5eb;border-radius:10px}
-.record-usage{font-size:11px;color:var(--teal);margin:0 0 12px;padding:8px 14px;background:#edf6f4;border-left:3px solid var(--teal)}
-.playback-poster{display:none;width:100%}.chart{width:100%;max-height:210px}details{margin:18px 0}summary{cursor:pointer;font-weight:650}code{font-size:.85em}
-@media(max-width:600px){main{padding:0 14px;margin:16px auto}h1{font-size:27px}section{padding:16px}.stats{grid-template-columns:repeat(2,1fr)}header{padding:20px}}
+.record-usage{font-size:11px;color:var(--teal);margin:0 0 8px;padding:6px 10px;background:#edf6f4;border-left:3px solid var(--teal)}
+.playback-poster{display:none;width:100%}.chart{display:block;width:100%;height:auto}details{margin:6px 0}summary{cursor:pointer;font-weight:650}code{font-size:.85em}.detail-scroll{max-height:420px;overflow:auto}
+@media(max-width:600px){main{padding:0 14px;margin:16px auto}h1{font-size:27px}section{padding:16px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat.cost{grid-column:1/-1;flex-direction:row;justify-content:flex-start;align-items:baseline;gap:8px;flex-wrap:wrap}header{padding:20px}}
 @media print{body{background:white;font-size:10pt}main{padding:0;margin:0;max-width:none}nav,.playback-frame{display:none}.playback-poster{display:block}
-section{border:0;padding:0;margin:20px 0}header{background:#edf3f6;color:var(--ink);padding:18px}.stats{grid-template-columns:repeat(4,1fr)}.stat{padding:10px}
-h2,h3,summary{break-after:avoid}.decision,.stat,tr{break-inside:avoid}.quote,.message{font-size:9pt}details{break-inside:auto}a{color:inherit;text-decoration:none}}
+section{border:0;padding:0;margin:12px 0}header{background:#edf3f6;color:var(--ink);padding:14px}.stats{grid-template-columns:repeat(5,minmax(0,1fr))}.stat{padding:8px}.stat.cost{grid-column:auto;flex-direction:column;align-items:stretch;justify-content:space-between}
+h2,h3,summary{break-after:avoid}.decision,.stat,tr{break-inside:avoid}.quote,.message{font-size:9pt}details{break-inside:auto}.detail-scroll{max-height:none;overflow:visible}a{color:inherit;text-decoration:none}}
 """
 
 
@@ -42,12 +43,48 @@ def number(value):
     return f"{value:,}" if value is not None else "Unknown"
 
 
+def duration(milliseconds):
+    if milliseconds is None:
+        return "Unknown"
+    seconds = int((milliseconds + 500) // 1000)
+    if not seconds:
+        return "0s"
+    days, remaining = divmod(seconds, 86400)
+    hours, remaining = divmod(remaining, 3600)
+    minutes, seconds = divmod(remaining, 60)
+    return " ".join(f"{value:g}{unit}" for value, unit in
+                    ((days, "d"), (hours, "h"), (minutes, "m"), (seconds, "s")) if value)
+
+
+def review_prose(value):
+    """Use user terminology in reviewed prose, never in source messages."""
+    def replace(match):
+        word = "users" if match[0].lower() == "humans" else "user"
+        return word.upper() if match[0].isupper() else word.capitalize() if match[0][0].isupper() else word
+    return re.sub(r"\bhumans?\b", replace, value, flags=re.IGNORECASE)
+
+
+def input_number(total):
+    return number(total["input"]) + ("+ (incomplete)" if not total.get("input_complete", True) else "")
+
+
+def cost_component(total, key):
+    part = (total.get("cost_components") or {}).get(key)
+    return f'{number(part["tokens"])} / ${part["estimated_usd"]:,.2f}' if part else "Unknown"
+
+
 def spend(total):
     if not total["calls"]:
         return "Unknown (no recorded usage)"
-    if total["estimated_usd"] is None:
+    lower = total.get("estimated_usd_min", total["estimated_usd"])
+    upper = total.get("estimated_usd_max", total["estimated_usd"])
+    if lower is None:
         return "Unpriced"
-    return f'${total["estimated_usd"]:,.6f}' + (" + unpriced calls" if total["unpriced_calls"] else "")
+    amount = f'${total["estimated_usd"]:,.2f}' if total["estimated_usd"] is not None else ""
+    if lower != upper:
+        bounds = f'${lower:,.2f} - ${upper:,.2f}'
+        amount = f'~{amount} (range {bounds})' if amount else f'Range {bounds}'
+    return amount + (" + unpriced calls" if total["unpriced_calls"] else "")
 
 
 def spend_matches_display(text, expected):
@@ -55,14 +92,34 @@ def spend_matches_display(text, expected):
     if not match:
         return False
     displayed = Decimal(match.group(1).replace(",", ""))
-    return abs(displayed - Decimal(str(expected))) <= Decimal("0.0000005")
+    places = len(match.group(1).partition(".")[2])
+    return abs(displayed - Decimal(str(expected))) <= Decimal(1).scaleb(-places) / 2
 
 
-def table(headers, rows):
+def spend_matches_total(text, total):
+    lower = total.get("estimated_usd_min", total["estimated_usd"])
+    upper = total.get("estimated_usd_max", total["estimated_usd"])
+    if lower is None:
+        return text == ("Unpriced" if total["calls"] else "No recorded usage")
+    values = [total["estimated_usd"]] if total["estimated_usd"] is not None else []
+    if lower != upper:
+        values.extend((lower, upper))
+    shown = re.findall(r"\$[\d,.]+", text)
+    return (len(shown) == len(values)
+            and all(spend_matches_display(value, expected) for value, expected in zip(shown, values))
+            and ("+ unpriced calls" in text) == bool(total["unpriced_calls"]))
+
+
+def table(headers, rows, first_column_links=None):
+    def cell(index, value):
+        text = escape(str(value))
+        link = (first_column_links or {}).get(str(value)) if index == 0 else None
+        return f'<td><a href="{escape(link, quote=True)}">{text}</a></td>' if link else f"<td>{text}</td>"
+
     return '<div class="table-scroll"><table><thead><tr>' + "".join(
         f"<th>{escape(str(h))}</th>" for h in headers
     ) + "</tr></thead><tbody>" + "".join(
-        "<tr>" + "".join(f"<td>{escape(str(v))}</td>" for v in row) + "</tr>" for row in rows
+        "<tr>" + "".join(cell(i, value) for i, value in enumerate(row)) + "</tr>" for row in rows
     ) + "</tbody></table></div>"
 
 
@@ -70,15 +127,30 @@ def payload(events, analysis):
     decisions = {d["input"]: d for d in analysis["interpretation"]["decisions"]}
     priced = {r["id"]: r for r in analysis["accounting"]["requests"]}
     humans, updates, usage, undated = [], [], [], []
+    sessions = {}
     for order, event in enumerate(events):
         common = {"id": event["id"], "t": event["t"], "tool": HARNESSES[event["harness"]],
                   "session": event["session"], "source": event["source"], "order": order}
+        info = sessions.setdefault((common["tool"], event["session"]), {
+            "tool": common["tool"], "session": event["session"], "start": None,
+            "lo": None, "hi": None, "preview": "",
+        })
+        if event["t"] is not None:
+            info["lo"] = min(info["lo"], event["t"]) if info["lo"] is not None else event["t"]
+            info["hi"] = max(info["hi"], event["t"]) if info["hi"] is not None else event["t"]
+        recorded_start = analysis.get("session_starts", {}).get(event["source"].split(":")[0])
+        started = (round(datetime.fromisoformat(recorded_start.replace("Z", "+00:00")).timestamp() * 1000)
+                   if recorded_start else event["t"])
+        if started is not None:
+            info["start"] = min(info["start"], started) if info["start"] is not None else started
+        if event["kind"] == "user" and not info["preview"]:
+            info["preview"] = event["text"]
         if event["kind"] in ("user", "assistant"):
             row = {**common, "text": event["text"], "role": event["kind"]}
             decision = decisions.get(event["id"])
-            row.update(category=decision["category"] if decision else "Recorded message", moment={
-                "kind": decision["category"], "title": decision["title"],
-                "note": decision["analysis"], "basis": f"Reviewed input {event['id']}.",
+            row.update(category=review_prose(decision["category"]) if decision else "Recorded message", moment={
+                "kind": review_prose(decision["category"]), "title": review_prose(decision["title"]),
+                "note": review_prose(decision["analysis"]), "basis": f"Reviewed input {event['id']}.",
             } if decision else None)
             if event["t"] is None:
                 undated.append(row)
@@ -111,7 +183,8 @@ def payload(events, analysis):
         "meta": {"title": analysis["title"], "timezone": analysis["timezone"], "start": lo, "end": hi,
                  "human_count": len(humans), "model_event_count": len(usage), "assistant_update_count": len(updates),
                  "undated_count": len(undated), "curated_markers": len(decisions),
-                 "method": "All genuine messages in the explicit scope are retained. Gold marks reviewed material directions, not a creativity score. Unknown times remain outside the clock. Tool payloads and internal reasoning are not displayed. Model events use authoritative per-request accounting, not cumulative counters. Agent claims in historical text are not independently verified outcomes."},
+                 "method": "Navigate messages manually. Selecting an input lists all its recorded assistant responses with timestamps and sources. Selecting a response highlights it without hiding other replies. Ownership follows recorded turn IDs or matching requests before inferred same-conversation proximity. Gold marks reviewed directions. Unknown times remain outside the clock. Model events use per-request usage, not cumulative counters."},
+        "sessions": sorted(sessions.values(), key=lambda row: (row["start"] is None, row["start"] or 0, row["tool"], row["session"])),
         "days": days, "humans": humans, "updates": updates, "usage": usage, "undated": undated, "clusters": clusters,
         "accounting": {
             **analysis["accounting"],
@@ -141,14 +214,35 @@ def report_html(collection, events, analysis):
     e = escape
     by_id = {r["id"]: r for r in events}
     title = e(analysis["title"])
+    period = "Unknown (no reliable timestamps)"
+    if analysis["start"] is not None:
+        zone = ZoneInfo(analysis["timezone"])
+        start, end = [datetime.fromtimestamp(analysis[key] / 1000, zone).strftime("%Y-%m-%d %H:%M:%S %Z")
+                      for key in ("start", "end")]
+        period = start if analysis["start"] == analysis["end"] else f"{start} - {end}"
+        if analysis["undated_events"]:
+            period += "; undated records also included"
+    timing = analysis["timing"]
+    wall = duration(timing["wall_ms"])
+    if timing["wall_ms"] is not None and timing["undated_events"]:
+        wall += " (dated records only)"
+    turn_time = duration(timing["total_turn_ms"])
+    if timing["timed_turns"] < timing["total_turns"] and timing["total_turn_ms"] is not None:
+        turn_time += " (partial)"
     html = [f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{REPORT_CSS}</style></head><body><main>',
-            f'<header><p class="eyebrow">AGENT SESSION INSIGHTS / VENN DESIGN</p><h1>{title}</h1><p>{e(analysis["interpretation"]["summary"])}</p><a href="player.html">Open standalone session player</a></header>',
+            f'<header><p class="eyebrow">AGENT SESSION INSIGHTS</p><h1>{title}</h1><p>{e(review_prose(analysis["interpretation"]["summary"]))}</p><a href="player.html">Open standalone session player</a></header>',
             '<nav aria-label="Report contents">' + "".join(f'<a href="#{key}">{label}</a>' for key, label in [
-                ("coverage", "Coverage"), ("usage", "Usage"), ("time", "Activity"), ("directions", "Human direction"),
-                ("playback", "Replay"), ("limits", "Limits"), ("record", "Conversation"), ("sources", "Sources")]) + "</nav>",
+                ("coverage", "Coverage"), ("usage", "Usage"), ("time", "Activity"), ("directions", "User direction"),
+                ("playback", "Replay"), ("sources", "Data")]) + "</nav>",
             '<div class="stats">' + "".join(f'<div class="stat"><b>{number(analysis[key])}</b><span>{label}</span></div>' for key, label in [
-                ("human_inputs", "Human inputs"), ("assistant_messages", "Assistant messages"),
-                ("metered_requests", "Metered requests"), ("tool_calls", "Tool invocations")]) + "</div>",
+                ("human_inputs", "User inputs"), ("assistant_messages", "Assistant messages"),
+                ("metered_requests", "Metered requests"), ("tool_calls", "Tool invocations")])
+            + f'<div class="stat cost"><b>{e(spend(analysis["accounting"]["total"]))}</b><span>Estimated retail cost (USD)</span></div></div>'
+            + f'<div class="timing-summary" aria-label="Recorded durations" title="{e(timing["method"], quote=True)}">'
+            + f'<span>Wall time: <strong id="wall-time">{e(wall)}</strong></span>'
+            + f'<span>Total turn time: <strong id="total-turn-time">{e(turn_time)}</strong></span>'
+            + f'<small>{timing["timed_turns"]} of {timing["total_turns"]} turns timed; overlaps summed; not active compute time.</small></div>'
+            + f'<p class="report-period"><b>Recorded period:</b> {e(period)}</p>',
             '<section id="coverage"><h2>Scope and coverage</h2><p>This report covers only the explicitly selected interaction. Logistics and approvals remain in the full replay; reviewed material directions are marked separately. Missing harnesses are outside the measured population.</p>']
     rows = []
     for harness, label in HARNESSES.items():
@@ -156,9 +250,25 @@ def report_html(collection, events, analysis):
         rows.append((label, "Supplied" if totals else collection["missing_harnesses"].get(harness, "No source supplied."),
                      totals["human_inputs"] if totals else "Not measured", totals["metered_requests"] if totals else "Not measured"))
     html.append(table(["Harness", "Coverage", "Inputs", "Metered requests"], rows))
+    html.append(f'<details id="coverage-details"><summary>Session details and warnings ({len(collection["sources"])} sources, {len(collection["warnings"])} warnings)</summary><div class="detail-scroll">')
+    first_events = {}
+    for event in events:
+        source_id = event["source"].split(":")[0]
+        if event["timestamp"] and (source_id not in first_events or event["timestamp"] < first_events[source_id]):
+            first_events[source_id] = event["timestamp"]
+    rows = []
     for source in collection["sources"]:
-        html.append(f'<p class="source">{e(source["id"])} · {e(source["session"])} · bounds: {e(source["start"] or "unbounded")} to {e(source["end"] or "unbounded")} · {source["raw_records"]:,} raw records inspected; {source["outside_interval"]:,} supported events outside scope.</p>')
+        started_at = source.get("started_at") or first_events.get(source["id"])
+        date = (datetime.fromisoformat(started_at.replace("Z", "+00:00")).astimezone(ZoneInfo(analysis["timezone"]))
+                .strftime("%Y-%m-%d %H:%M %Z") if started_at else "Unknown")
+        basis = source.get("started_at_basis", "First recorded event; session start unavailable")
+        rows.append((f"{date} (first recorded event)" if started_at and basis != "Session metadata" else date,
+                     f'{source["id"]} · {source["session"]}',
+                     f'{source["start"] or "unbounded"} to {source["end"] or "unbounded"}',
+                     f'{source["raw_records"]:,}', f'{source["outside_interval"]:,}'))
+    html.append(table(["Session start", "Source / session", "Selected bounds", "Raw records", "Outside scope"], rows))
     html.extend(f'<p class="source">{e(warning)}</p>' for warning in collection["warnings"])
+    html.append('</div></details>')
     html.append(f'<p>Conversations: {analysis["conversations"]}. Events without reliable timestamps: {analysis["undated_events"]}. Visible message records are separate from metered requests.</p></section>')
     html.append('<section id="usage"><h2>Observed usage and model mix</h2>')
     html.append(table(["Inclusive input", "Output", "Cached reads (inside input)", "Cache creation (inside input)"],
@@ -166,59 +276,46 @@ def report_html(collection, events, analysis):
     html.append(table(["Model", "Requests", "Input tokens", "Output tokens", "Share of observed tokens"],
                       [(m["model"], number(m["requests"]), number(m["input"]), number(m["output"]), f'{m["token_percent"]:.2f}%') for m in analysis["models"]]))
     if analysis["models"]:
-        chart = ['<svg class="chart" viewBox="0 0 900 160" role="img" aria-label="Share of observed tokens by model">']
+        chart = [f'<svg class="chart" viewBox="0 0 900 {len(analysis["models"]) * 28}" role="img" aria-label="Share of observed tokens by model">']
         for i, model in enumerate(analysis["models"]):
-            y = 8 + i * min(28, 140 / len(analysis["models"]))
+            y = 6 + i * 28
             chart.append(f'<text x="0" y="{y+14}" font-size="12">{e(model["model"])}</text><rect x="200" y="{y}" width="{model["token_percent"]*6}" height="16" fill="#2c8582"/><text x="810" y="{y+14}" font-size="12">{model["token_percent"]:.1f}%</text>')
         html.extend(chart + ["</svg>"])
     accounting = analysis["accounting"]
     html.append(f'<p>{e(analysis["cost"])}</p>')
-    html.append(table(["Model", "Priced / observed calls", "Estimated USD"],
-                      [(model, f'{summary["priced_calls"]} / {summary["calls"]}', spend(summary))
+    html.append(table(["Model", "Priced / calls", "Fresh input / USD", "Cache reads / USD",
+                       "Cache writes / USD", "Output / USD", "Total USD"],
+                      [(model, f'{summary["priced_calls"]} / {summary["calls"]}',
+                        *(cost_component(summary, key) for key in ("fresh_input", "cache_read", "cache_write", "output")),
+                        spend(summary))
                        for model in accounting["total"]["models"]
                        for summary in [summarize([r for r in accounting["requests"] if r["model"] == model])]]))
-    html.append('<h3>Spend and tokens by human turn</h3><p>Complete recorded turns, including logistics. Recorded turn IDs take precedence; other ownership is inferred from response links or preceding inputs in the same conversation. Missing or unmatched inputs remain unattributed. Zero metered calls means unknown usage, not zero actual spend.</p>')
-    html.append(table(["Turn", "Models", "Calls", "Input tokens", "Output tokens", "Estimated USD"],
-                      [(turn["id"], ", ".join(turn["models"]) or "Unknown", turn["calls"],
-                        number(turn["input"]) if turn["calls"] else "Unknown",
+    html.append(f'<details id="turn-spend-details"><summary>Spend and tokens by user turn ({len(accounting["turns"])})</summary><div class="detail-scroll">')
+    html.append(table(["Turn", "Prompt", "Models", "Calls", "Input tokens", "Output tokens", "Estimated USD"],
+                      [(turn["id"], turn["text"][:60], ", ".join(turn["models"]) or "Unknown", turn["calls"],
+                        input_number(turn) if turn["calls"] else "Unknown",
                         number(turn["output"]) if turn["calls"] else "Unknown", spend(turn))
-                       for turn in accounting["turns"]]))
-    html.append(f'<p>Unattributed: {accounting["unattributed"]["calls"]} calls; {e(spend(accounting["unattributed"]))}. Per-request ownership methods are included in analysis.json and the standalone player.</p>')
-    html.append(f'<p>{e(accounting["pricing"]["method"])}</p>')
-    if collection.get("pricing"):
-        html.append(f'<p>Frozen pricing: <a href="pricing.json">rates, dates, sources and assumptions</a>. SHA-256: <code>{e(collection["pricing"]["sha256"])}</code>. {e(accounting["pricing"]["verified_on_by_model_note"])}</p>')
-    html.extend(f'<p class="source">{e(value)}</p>' for value in accounting["pricing"]["assumptions"])
-    html.append('</section><section id="time"><h2>Observed activity, not measured working time</h2>')
-    html.append(table(["Bin size (minutes)", "Human occupied bins", "Model occupied bins", "Shared bins", "Model bins without an input"],
+                       for turn in accounting["turns"]],
+                      {turn["id"]: f'player.html#{turn["id"]}' for turn in accounting["turns"]}))
+    html.append(f'<p>Unattributed: {accounting["unattributed"]["calls"]} calls; {e(spend(accounting["unattributed"]))}.</p></div></details>')
+    html.append('</section><section id="time"><h2>Observed activity (not measured working time)</h2>')
+    html.append(table(["Bin size (minutes)", "User occupied bins", "Model occupied bins", "Shared bins", "Model bins without an input"],
                       [(b["minutes"], b["human_bins"], b["model_bins"], b["overlap_bins"], b["model_without_input_bins"]) for b in analysis["activity_bins"]]))
     html.append(f'<p>Clock timezone: {e(analysis["timezone"])}. Different bin widths show sensitivity; no claim of continuous attention, runtime, or unattended work follows from a bin.</p>')
-    html.append(table(["Local hour", "Human inputs", "Model events"],
+    html.append('<details id="hourly-details"><summary>Activity by hour</summary><div class="detail-scroll">')
+    html.append(table(["Local hour", "User inputs", "Model events"],
                       [(h["hour"], h["human_inputs"], h["model_events"]) for h in analysis["hourly"]]))
-    html.append('</section><section id="directions"><h2>How human direction shaped the work</h2><p>Reviewed interpretation, with verbatim input and response evidence. Responses establish what the historical agent reported, not independent proof of delivery.</p>')
+    html.append('</div></details>')
+    html.append('</section><section id="directions"><h2 id="directions-heading">How the user shaped the work</h2><p>Reviewed interpretation, with verbatim input and response evidence. Responses establish what the historical agent reported, not independent proof of delivery.</p><div class="detail-scroll" tabindex="0" role="region" aria-labelledby="directions-heading">')
     for decision in analysis["interpretation"]["decisions"]:
         human = by_id[decision["input"]]
-        html.append(f'<article class="decision"><h3>{e(decision["title"])}</h3><p class="source">{e(decision["category"])} · <a href="player.html#{human["id"]}">{human["id"]}</a> · {e(human["source"])}</p><div class="quote">{e(human["text"])}</div><p>{e(decision["analysis"])}</p>')
+        html.append(f'<article class="decision"><h3>{e(review_prose(decision["title"]))}</h3><p class="source">{e(review_prose(decision["category"]))} · <a href="player.html#{human["id"]}">{human["id"]}</a> · {e(human["source"])}</p><div class="quote">{e(human["text"])}</div><p>{e(review_prose(decision["analysis"]))}</p>')
         if decision.get("response"):
             response = by_id[decision["response"]]
             html.append(f'<p class="source">Agent-reported response: <a href="player.html#{response["id"]}">{response["id"]}</a> · {e(response["source"])}</p><div class="quote agent">{e(response["text"])}</div>')
         html.append("</article>")
-    html.append('</section><section id="playback"><h2>Interactive session playback</h2><p><a href="player.html">Open the standalone player</a>. Use the arrow buttons on the right of the session text to move between messages. Drag across the timeline to zoom and use its scrollbar to pan, or search the full conversation. Axis labels include clock time.</p><iframe title="Session replay" class="playback-frame" src="player.html"></iframe><img class="playback-poster" src="timeline.png" alt="Static preview of the session timeline; use player.html for interaction"></section>')
-    html.append('<section id="limits"><h2>Evidence limits and method</h2><ul>' + "".join(f"<li>{e(value)}</li>" for value in analysis["limitations"]) + '</ul><p>Raw files are frozen privately with SHA-256 hashes. Canonical message records and authoritative request IDs prevent mirror/cumulative-token double counting. The new report/player are browser-checked; this does not retroactively verify claims in the historical conversation.</p></section>')
-    html.append('<section id="record"><h2>Complete visible conversation</h2><p>All selected user and assistant messages, not just material prompts. Tool payloads and internal reasoning are intentionally excluded.</p>')
-    turns = {turn["id"]: turn for turn in accounting["turns"]}
-    for event in events:
-        if event["kind"] not in ("user", "assistant"):
-            continue
-        label = "Human" if event["kind"] == "user" else "Agent"
-        html.append(f'<details id="{event["id"]}" class="record"><summary>{event["id"]} · {label} · {e(event["timestamp"] or "Undated")}</summary><p class="source">{e(event["source"])} · <a href="player.html#{event["id"]}">Replay this message</a></p><div class="message {"agent" if label == "Agent" else ""}">{e(event["text"])}</div>')
-        turn = turns.get(event["id"])
-        if turn:
-            tokens = f'{turn["input"]:,} in · {turn["output"]:,} out · {turn["calls"]:,} calls' if turn["calls"] else "Tokens unavailable"
-            html.append(f'<p class="record-usage">{e(", ".join(turn["models"]) or "Model unknown")} · Estimated {e(spend(turn))} · {tokens} · Complete recorded turn</p>')
-        html.append('</details>')
-    html.append('</section><section id="sources"><h2>Sources and reproducibility</h2><p><a href="collection.json">Source manifest and hashes</a> · <a href="analysis.json">Analysis data</a> · <a href="events.jsonl">Normalized evidence</a> · <a href="verification.json">Verification result</a></p>')
-    for source in collection["sources"]:
-        html.append(f'<p class="source">{e(source["id"])}: {e(source["original_path"])}<br>SHA-256: {source["sha256"]}</p>')
+    html.append('</div></section><section id="playback"><h2>Interactive session playback</h2><p><a href="player.html">Open the standalone player</a>. Use the arrow buttons on the right of the session text to move between messages and follow their timeline positions. Drag across the timeline to zoom and use its scrollbar to pan, or search the full conversation. Axis labels include clock time.</p><iframe title="Session replay" class="playback-frame" src="player.html"></iframe><img class="playback-poster" src="timeline.png" alt="Static preview of the session timeline; use player.html for interaction"></section>')
+    html.append('<section id="sources"><h2>Data</h2><p><a href="collection.json">Sessions</a> · <a href="analysis.json">Analysis</a> · <a href="events.jsonl">Messages and usage</a> · <a href="pricing.json">Rates</a> · <a href="verification.json">Verification</a></p>')
     html.append('</section></main></body></html>')
     return "".join(html)
 
@@ -254,52 +351,78 @@ def publish(output, collection, events, analysis, public_base_url=None):
     accounting = analysis["accounting"]
     for field in ("calls", "input", "output", "cached_read", "cache_write", "priced_calls", "unpriced_calls"):
         assert sum(t[field] for t in accounting["turns"]) + accounting["unattributed"][field] == accounting["total"][field], field
-    expected_spend = accounting["total"]["estimated_usd"]
-    if expected_spend is not None:
-        assert abs(sum(t["estimated_usd"] or 0 for t in accounting["turns"]) +
-                   (accounting["unattributed"]["estimated_usd"] or 0) - expected_spend) < 1e-8
+    for field in ("estimated_usd", "estimated_usd_min", "estimated_usd_max"):
+        expected_spend = accounting["total"][field]
+        if expected_spend is not None:
+            assert abs(sum(t[field] or 0 for t in accounting["turns"]) +
+                       (accounting["unattributed"][field] or 0) - expected_spend) < 1e-8, field
     errors, network = [], []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, ignore_default_args=["--hide-scrollbars"])
         page = browser.new_page(viewport={"width": 1440, "height": 1100})
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on("request", lambda request: network.append(request.url))
-        page.goto((output / "player.html").as_uri(), wait_until="networkidle")
+        page.goto((output / "player.html").as_uri(), wait_until="load")
         state = lambda: page.evaluate("window.vennPlayback.state()")
         assert page.locator("#session-spend").count() == 1
         assert not page.locator("#usage-details").evaluate("(el)=>el.open")
         assert page.locator(".usage-card").bounding_box()["height"] < 120
 
-        def check_usage():
-            window = state()
-            tool = page.locator("#harness").input_value()
+        usage_snapshot = """() => {
+            const get = id => document.getElementById(id);
+            const visible = id => get(id).getClientRects().length > 0 &&
+                getComputedStyle(get(id)).visibility !== 'hidden';
+            return {
+                window:window.vennPlayback.state(), tool:get('harness').value, session:get('session').value,
+                turnVisible:visible('prompt-usage'), windowVisible:visible('window-summary'),
+                promptAttached:get('human-text').nextElementSibling.id === 'prompt-usage',
+                totals:Object.fromEntries(['session','window','turn'].map(scope => [scope,{
+                    spend:get(scope+'-spend').innerText, tokens:get(scope+'-tokens').innerText
+                }]))
+            };
+        }"""
+        turns = {turn["id"]: turn for turn in accounting["turns"]}
+
+        def check_usage(snapshot=None):
+            snapshot = snapshot if snapshot is not None else page.evaluate(usage_snapshot)
+            window, tool, session = snapshot["window"], snapshot["tool"], snapshot["session"]
+            selected_session = json.loads(session) if session != "all" else None
             rows = [r for r in data["accounting"]["requests"] if r["t"] is not None
-                    and window["lo"] <= r["t"] <= window["hi"] and (tool == "all" or r["tool"] == tool)]
+                    and window["lo"] <= r["t"] <= window["hi"] and (tool == "all" or r["tool"] == tool)
+                    and (selected_session is None or [r["tool"], r["session"]] == selected_session)]
             scopes = [("session", accounting["total"]), ("window", summarize(rows))]
-            turn = next((t for t in accounting["turns"] if t["id"] == window["selected"]), None)
+            turn = turns.get(window["selected"])
             if turn:
                 scopes.append(("turn", turn))
-                assert page.locator("#prompt-usage").is_visible()
-                assert page.evaluate("document.getElementById('human-text').nextElementSibling.id==='prompt-usage'")
+                assert snapshot["turnVisible"]
+                assert snapshot["promptAttached"]
             filtered = data["meta"]["start"] is not None and (
                 window["lo"] != data["meta"]["start"] or window["hi"] != data["meta"]["end"]
-                or tool != "all" or any(r["t"] is None for r in data["accounting"]["requests"])
+                or tool != "all" or session != "all" or any(r["t"] is None for r in data["accounting"]["requests"])
             )
-            assert page.locator("#window-summary").is_visible() == filtered
+            assert snapshot["windowVisible"] == filtered
             for scope, total in scopes:
-                shown = page.locator(f"#{scope}-spend").inner_text()
-                if total["estimated_usd"] is None:
-                    assert shown == ("Unpriced" if total["calls"] else "No recorded usage"), (scope, shown)
-                else:
-                    assert spend_matches_display(shown, total["estimated_usd"]), (scope, shown)
-                    assert ("+ unpriced calls" in shown) == bool(total["unpriced_calls"])
+                shown = snapshot["totals"][scope]["spend"]
+                assert spend_matches_total(shown, total), (scope, shown)
                 if total["calls"]:
-                    assert page.locator(f"#{scope}-tokens").inner_text() == (
-                        f'{total["input"]:,} in · {total["output"]:,} out · {total["calls"]:,} calls'
+                    assert snapshot["totals"][scope]["tokens"] == (
+                        f'{input_number(total)} in · {total["output"]:,} out · {total["calls"]:,} calls'
                     )
 
+        def filter_snapshots(control, values):
+            return page.evaluate("""({control,values}) => {
+                const snapshot = """ + usage_snapshot + """;
+                const select = document.getElementById(control);
+                return values.map(value => {
+                    select.value = value;
+                    if (select.value !== value) throw new Error('Missing filter option: '+value);
+                    select.dispatchEvent(new Event('input',{bubbles:true}));
+                    select.dispatchEvent(new Event('change',{bubbles:true}));
+                    return snapshot();
+                });
+            }""", {"control": control, "values": values})
+
         check_usage()
-        turns = {turn["id"]: turn for turn in accounting["turns"]}
         for row in page.locator("#event-list .event-row").evaluate_all(
             "(rows)=>rows.map(el=>({id:el.dataset.id,usage:el.querySelector('.event-usage')?.textContent??null}))"
         ):
@@ -310,18 +433,28 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 assert row["usage"] is not None
                 assert (", ".join(turn["models"]) or "Model unknown") in row["usage"]
                 if turn["calls"]:
-                    assert f'{turn["input"]:,} in · {turn["output"]:,} out' in row["usage"]
-                if turn["estimated_usd"] is not None:
-                    assert spend_matches_display(row["usage"], turn["estimated_usd"]), (row["id"], row["usage"])
+                    assert f'{input_number(turn)} in · {turn["output"]:,} out' in row["usage"]
+                if turn["estimated_usd_min"] is not None:
+                    assert spend_matches_total(row["usage"], turn), (row["id"], row["usage"])
                 else:
                     assert ("Unpriced" if turn["calls"] else "No recorded usage") in row["usage"]
-        for row in sorted(data["humans"] + data["updates"], key=lambda r: (r["t"], r["order"])):
-            page.evaluate("(id)=>window.vennPlayback.jumpToMessage(id)", row["id"])
-            selector = "#human-text" if row["role"] == "user" else "#agent-text"
-            assert page.locator(selector).inner_text() == row["text"], row["id"]
-        for row in data["undated"]:
-            page.evaluate("(id)=>window.vennPlayback.jumpToMessage(id)", row["id"])
-            assert page.locator("#undated-text").inner_text() == row["text"]
+        navigation_errors = page.evaluate("""({rows, turns}) => {
+            const errors = [];
+            for (const row of rows) {
+                window.vennPlayback.jumpToMessage(row.id);
+                const node = row.role === 'user' ? document.getElementById('human-text')
+                    : document.querySelector(`#agent-text [data-id="${row.id}"] .response-text`);
+                if (node?.textContent !== row.text) errors.push(row.id);
+                if (row.t === null && document.getElementById('undated-text').textContent !== row.text) errors.push(row.id + ':undated');
+                if (row.role === 'user') {
+                    const shown = [...document.querySelectorAll('#agent-text .agent-response')].map(el => el.dataset.id);
+                    if (JSON.stringify(shown) !== JSON.stringify(turns[row.id] || [])) errors.push(row.id + ':responses');
+                }
+            }
+            return errors;
+        }""", {"rows": sorted(data["humans"] + data["updates"], key=lambda r: (r["t"], r["order"])) + data["undated"],
+               "turns": {turn["id"]: turn["response_ids"] for turn in analysis["accounting"]["turns"]}})
+        assert not navigation_errors, navigation_errors
         if data["meta"]["start"] is not None:
             page.locator("#start").click()
             first = state()["message"]
@@ -344,8 +477,9 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 assert state()["hi"] - state()["lo"] == width
                 page.locator("#timeline").scroll_into_view_if_needed()
                 box = page.locator("#timeline").bounding_box()
-                left = box["x"] + (150 + .2 * 930) / 1100 * box["width"]
-                right = box["x"] + (150 + .6 * 930) / 1100 * box["width"]
+                width_svg = page.locator("#timeline").evaluate("(el) => el.viewBox.baseVal.width")
+                left = box["x"] + (150 + .2 * (width_svg - 170)) / width_svg * box["width"]
+                right = box["x"] + (150 + .6 * (width_svg - 170)) / width_svg * box["width"]
                 y = box["y"] + box["height"] * .55
                 page.mouse.move(left, y)
                 page.mouse.down()
@@ -363,25 +497,29 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 check_usage()
                 if width > 60000:
                     page.locator("#start").click()
-                    page.locator("#skip").uncheck()
-                    page.locator("#speed").select_option("5")
                     before = state()["now"]
-                    page.locator("#play").click()
-                    page.wait_for_timeout(80)
-                    page.locator("#play").click()
-                    assert state()["now"] > before and not state()["playing"]
+                    page.locator("#scrub").evaluate('(el)=>{el.value=50000;el.dispatchEvent(new Event("input",{bubbles:true}));}')
+                    assert state()["now"] > before
             page.locator("#end").click()
-            assert int(page.locator("#human-count").inner_text().replace(",", "")) == len(data["humans"])
-            assert int(page.locator("#agent-count").inner_text().replace(",", "")) == len(data["usage"])
-            for tool in {row["tool"] for row in data["humans"] + data["updates"] + data["usage"]}:
-                page.locator("#harness").select_option(tool)
-                assert state()["visibleHumanInputs"] == sum(row["tool"] == tool for row in data["humans"])
-                check_usage()
+            assert state()["visibleHumanInputs"] == len(data["humans"])
+            assert state()["visibleModelEvents"] == len(data["usage"])
+            tools = sorted({row["tool"] for row in data["humans"] + data["updates"] + data["usage"]})
+            for tool, snapshot in zip(tools, filter_snapshots("harness", tools), strict=True):
+                assert snapshot["tool"] == tool
+                assert snapshot["window"]["visibleHumanInputs"] == sum(row["tool"] == tool for row in data["humans"])
+                check_usage(snapshot)
             page.locator("#harness").select_option("all")
-            for day in data["days"]:
-                page.locator("#day").select_option(day["date"])
-                assert state()["visibleHumanInputs"] == sum(day["start"] <= row["t"] <= day["end"] for row in data["humans"])
-                check_usage()
+            session_values = [json.dumps([session["tool"], session["session"]], separators=(",", ":"))
+                              for session in data["sessions"]]
+            for session, value, snapshot in zip(data["sessions"], session_values,
+                                                 filter_snapshots("session", session_values), strict=True):
+                assert snapshot["session"] == value
+                assert snapshot["window"]["visibleHumanInputs"] == sum(row["tool"] == session["tool"] and row["session"] == session["session"] for row in data["humans"])
+                check_usage(snapshot)
+            page.locator("#session").select_option("all")
+            for day, snapshot in zip(data["days"], filter_snapshots("day", [day["date"] for day in data["days"]]), strict=True):
+                assert snapshot["window"]["visibleHumanInputs"] == sum(day["start"] <= row["t"] <= day["end"] for row in data["humans"])
+                check_usage(snapshot)
             page.locator("#day").select_option("all")
             page.locator("#scrub").evaluate('(el)=>{el.value=50000;el.dispatchEvent(new Event("input",{bubbles:true}));}')
             assert abs(state()["now"] - (data["meta"]["start"] + data["meta"]["end"]) / 2) < 1
@@ -397,12 +535,12 @@ def publish(output, collection, events, analysis, public_base_url=None):
         page.set_viewport_size({"width": 390, "height": 844})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.set_viewport_size({"width": 1280, "height": 1000})
-        page.goto((output / "report.html").as_uri(), wait_until="networkidle")
+        page.goto((output / "report.html").as_uri(), wait_until="load")
         assert page.locator("h1").count() == 1
-        assert page.locator(".record").count() == analysis["human_inputs"] + analysis["assistant_messages"]
-        assert page.locator(".record .record-usage").count() == analysis["human_inputs"]
+        assert page.locator(".record, #record, #limits").count() == 0
+        assert page.locator('iframe[src="player.html"]').count() == 1
         assert page.locator("img").evaluate_all("(images)=>images.every(i=>i.complete&&i.naturalWidth>0)")
-        page.evaluate("document.querySelectorAll('details.record').forEach(el=>el.open=true)")
+        page.evaluate("document.querySelectorAll('#coverage-details, #turn-spend-details, #hourly-details').forEach(el=>el.open=true)")
         if public_base_url:
             public_base_url = public_pdf_links(page, public_base_url)
         page.pdf(path=str(output / "report.pdf"), format="A4", print_background=True,
@@ -428,10 +566,12 @@ def publish(output, collection, events, analysis, public_base_url=None):
         "compact_totals_and_prompt_attached_usage": "passed",
         "full_log_prompt_usage": "passed",
         "estimated_usd": accounting["total"]["estimated_usd"],
+        "estimated_usd_min": accounting["total"]["estimated_usd_min"],
+        "estimated_usd_max": accounting["total"]["estimated_usd_max"],
         "priced_requests": accounting["total"]["priced_calls"],
         "unpriced_requests": accounting["total"]["unpriced_calls"],
         "unattributed_requests": accounting["unattributed"]["calls"],
-        "zoom_pan_reset_and_clock_ticks": "passed" if data["meta"]["start"] is not None else "not applicable: undated",
+        "zoom_pan_reset_and_manual_navigation": "passed" if data["meta"]["start"] is not None else "not applicable: undated",
         "drag_zoom_and_native_scrollbar": "passed" if data["meta"]["start"] is not None and data["meta"]["end"] - data["meta"]["start"] > 1000 else "not applicable",
         "harness_day_filters_and_scrubbing": "passed" if data["meta"]["start"] is not None else "not applicable: undated",
         "desktop_mobile_and_pdf": "passed", "external_network_requests": 0, "browser_errors": errors,

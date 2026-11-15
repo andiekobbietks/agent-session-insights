@@ -1,6 +1,6 @@
 ---
 name: publish-review
-description: Generate and verify Venn-style HTML/PDF analysis and a standalone zoomable session player.
+description: Generate and verify offline HTML/PDF analysis and a standalone zoomable session player.
 ---
 
 For a Python launch request with `"phase": "annotate"`, do not execute publication,
@@ -20,15 +20,19 @@ The pipeline must keep raw snapshots private and embed redacted text only.
 Validate full prompt/assistant coverage against source, not a proxy such as the number
 of material markers. Verify annotation references, request deduplication, source hashes,
 embedded player data, all messages, PDF output, and browser behavior.
-Check right-aligned message arrows, drag-to-zoom, native scrollbar panning/reset, clock ticks, playback,
+Check right-aligned message arrows, drag-to-zoom, native scrollbar panning/reset, time labels, manual seeking,
 search, source references, filters, and mobile layout. Confirm zero network requests.
 Check session/model/turn token totals, estimated spend and priced-call coverage.
-Confirm drag, scrollbar, reset, day and harness filters change only the window
-metrics, not entire-session or whole-turn accounting. Include the frozen pricing
-card/hash and assumptions; undated requests stay outside the zoomed time window.
+Confirm drag, scrollbar, reset, session, day and harness filters change only the window
+metrics, not entire-session or whole-turn accounting. Preserve the frozen pricing
+card/hash and assumptions in supporting JSON, not report footnotes; undated
+requests stay outside the zoomed time window.
 Keep the session total in one compact location and hide the range subtotal when
 unfiltered. Check that model/cost/token metadata sits beneath the user prompt and
-on each human full-log entry, not above the transcript or repeated on agent rows.
+on each human full-log entry in the player, not above the transcript or repeated
+on agent rows. Do not duplicate the complete conversation or an evidence-limits
+section in the report. Collapse session details/warnings and per-turn spend by
+default; put session start dates on the left and keep expanded tables scrollable.
 
 Do not modify historical reports or source logs. Do not publish automatically.
 On successful completion, list only report.html, report.pdf and player.html with

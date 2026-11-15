@@ -25,7 +25,9 @@ explicit IDs or "all"; a single match may be automatic for a generic report.
 Ask for the output directory after selection if none was given, suggesting the
 absolute `agent-session-reports/<repo-name>` path in the current workspace.
 Use the target repository's directory name. Do not generate
-until the user supplies/confirms that path; never overwrite a nonempty directory.
+until the user supplies/confirms that path. Never overwrite without explicit
+confirmation. The Python CLI prompts before replacing an existing review and
+defaults to No; directories with unrelated files or selected inputs are refused.
 An inventory-only request needs no output prompt. The command-line `repo` command
 automatically picks the first match and launches its harness (`--noagent` opts out).
 When receiving its JSON launch request, use the already selected manifest/output

@@ -6,11 +6,16 @@ description: Analyze measured usage and human/agent decision provenance without 
 Read the complete visible conversation in scope, not just prompts containing
 "report", "player", or another keyword. Preserve logistics in the replay even when
 excluding them from the qualitative directions ledger.
+Refer to the person as "the user", not "the human", in reviewed prose. Preserve
+source quotations verbatim.
 
 Use DESIGN.md's token-accounting and timing rules. Inspect collection warnings and
 coverage before interpreting metrics. Missing harnesses and missing usage are not zeros.
 For a Python launch request with `"phase": "annotate"`, use the already prepared
-evidence paths in that request. Read with file tools, write only its annotations
+evidence paths in that request: the complete visible `conversation.jsonl` and
+`coverage.json` summary. Read every human/assistant message, including logistics
+and undated records. Do not reread raw sources or repeated full accounting ledgers.
+Read with file tools, write only its annotations
 JSON, and stop. Do not run Python, preparation, tests, or publication.
 Shell commands are prohibited except for Codex read-only inspection within the
 generated temporary workspace when direct file-reading tools are unavailable;
@@ -24,7 +29,9 @@ unchanged so that live-log changes cannot invalidate reviewed evidence IDs.
 Identify a small set of material choices: data scope, question formulation,
 corrections, evidence standards, framing, experiments, product direction, and delivery.
 
-Write the annotations JSON described in DESIGN.md. Each decision cites a genuine
+Write the annotations JSON described in DESIGN.md, using its inline example.
+Checkout-only example files are not available in the temporary review workspace.
+Each decision cites a genuine
 input ID and, when available, a later response ID from the same conversation.
 Use each input ID at most once; combine multiple observations about one input
 into the same decision's analysis.
@@ -32,10 +39,14 @@ Explain what changed and what the evidence cannot establish. Label results as
 agent-reported unless a separate artifact/test was actually inspected.
 Do not rank models by quality from token share, infer original authorship from
 pasted text, invent cost rates, or convert occupied bins into working hours.
-When an approved dated pricing card is available, set the manifest `pricing` path.
+Reports use the bundled dated retail API card by default. An approved custom
+card can override it with the manifest `pricing` path. Preserve the frozen card.
 Price fresh input separately from inclusive cache reads/writes, apply long-context
 rules per request, and distinguish an API-equivalent estimate from a real bill.
-Preserve unknown prices and no-usage turns as unknown. Prefer native turn IDs;
+Preserve unknown prices and no-usage turns as unknown. Missing cache counts use
+the documented, labeled consecutive-context heuristic or a cost range, never
+an invented fixed percentage or a measured zero. Do not invent missing token totals.
+Prefer native turn IDs;
 label inferred splits and retain unmatched requests in an unattributed bucket.
 Reconcile per-turn plus unattributed tokens, requests and spend to session totals.
 

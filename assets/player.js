@@ -1,78 +1,100 @@
 'use strict';
+document.documentElement.classList.toggle('embedded',window.self!==window.top);
 const D=JSON.parse(document.getElementById('playback-data').textContent);
 const $=id=>document.getElementById(id), H=D.humans, U=D.usage, UP=D.updates;
 const A=D.accounting, requests=A.requests;
 const turnById=new Map(A.turns.map(turn=>[turn.id,turn]));
 const messages=[...H,...UP].sort((a,b)=>a.t-b.t||a.order-b.order);
+const messageById=new Map([...messages,...D.undated].map(row=>[row.id,row]));
+const responsesByInput=new Map(),inputByResponse=new Map();
+for(const turn of A.turns){
+  const rows=(turn.response_ids||[]).map(id=>messageById.get(id)).filter(Boolean);
+  responsesByInput.set(turn.id,rows);
+  for(const row of rows)inputByResponse.set(row.id,messageById.get(turn.id));
+}
 const fmtTime=new Intl.DateTimeFormat('en-US',{timeZone:D.meta.timezone,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
 const fmtDate=new Intl.DateTimeFormat('en-US',{timeZone:D.meta.timezone,weekday:'long',month:'long',day:'numeric',year:'numeric'});
 const fmtStamp=new Intl.DateTimeFormat('en-US',{timeZone:D.meta.timezone,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
+const fmtSessionDate=new Intl.DateTimeFormat('en-US',{timeZone:D.meta.timezone,year:'numeric',month:'short',day:'2-digit'});
 const fmtHour=new Intl.DateTimeFormat('en-US',{timeZone:D.meta.timezone,hour:'2-digit',minute:'2-digit',hour12:false});
 const fmtZone=new Intl.DateTimeFormat('en-US',{timeZone:D.meta.timezone,timeZoneName:'short'});
 const zone=t=>fmtZone.formatToParts(t).find(p=>p.type==='timeZoneName').value;
 const stamp=t=>fmtStamp.format(t)+' '+zone(t);
-let now=D.meta.start,lo=now,hi=D.meta.end,scopeLo=lo,scopeHi=hi,playing=false,lastFrame=0;
-let humans=[],usage=[],marked=[],points=[],viewMessages=[],allMessages=[],selected=null,current=null,focusedId=null;
+let now=D.meta.start,lo=now,hi=D.meta.end,scopeLo=lo,scopeHi=hi;
+let humans=[],usage=[],marked=[],viewMessages=[],allMessages=[],selected=null,current=null,focusedId=null;
 let timelineDrag=null,suppressTimelineClick=false,syncedScrollLeft=0;
-const svgNS='http://www.w3.org/2000/svg',W=1100,X0=150,X1=1080;
+const eventButtons=new Map(),humanDots=new Map();
+const eventGeometry=new Map();
+const responseNodes=new Map();
+let responseScopeKey=null,activeResponse=null,responseCurrentId=null;
+let eventViewportHeight=0;
+let eventScopeKey=null,activeEventButton=null,selectedDot=null;
+const svgNS='http://www.w3.org/2000/svg',X0=150;
+let W=1100,X1=1080,timelineViewportWidth=0;
 function text(id,value){$(id).textContent=value;}
 function make(tag,attrs={},value){const el=document.createElementNS(svgNS,tag);for(const [k,v]of Object.entries(attrs))el.setAttribute(k,String(v));if(value!==undefined)el.textContent=value;return el;}
 function preview(value,n=120){const v=value.replace(/<\/?pasted_content[^>]*>/g,'').replace(/\s+/g,' ').trim();return v.length>n?v.slice(0,n)+'…':v;}
 function lastAt(rows,t){let a=0,b=rows.length;while(a<b){const m=(a+b)>>1;if(rows[m].t<=t)a=m+1;else b=m;}return a-1;}
-function harnessMatch(row){return $('harness').value==='all'||row.tool===$('harness').value;}
-function scoped(row){return row&&row.t>=lo&&row.t<=hi&&harnessMatch(row);}
-function scopeMatch(row){return row.t>=scopeLo&&row.t<=scopeHi&&harnessMatch(row);}
-function sameConversation(a,b){return a.tool===b.tool&&a.session===b.session;}
-function pause(){playing=false;text('play','▶ Play');$('play').setAttribute('aria-label','Play timeline');text('play-state','PAUSED');$('play-state').classList.remove('playing');}
+function filterMatch(row){return ($('harness').value==='all'||row.tool===$('harness').value)&&($('session').value==='all'||JSON.stringify([row.tool,row.session])===$('session').value);}
+function scoped(row){return row&&row.t>=lo&&row.t<=hi&&filterMatch(row);}
+function scopeMatch(row){return row.t>=scopeLo&&row.t<=scopeHi&&filterMatch(row);}
+function refreshUndated(){
+  const select=$('undated-select'),selectedId=select.value,rows=D.undated.filter(filterMatch);
+  select.replaceChildren();
+  for(const row of rows){const option=document.createElement('option');option.value=row.id;option.textContent=`${row.id} · ${row.role} · ${preview(row.text,80)}`;select.append(option);}
+  if(rows.some(row=>row.id===selectedId))select.value=selectedId;
+  document.querySelector('.undated').hidden=!rows.length;
+  document.querySelector('.undated summary strong').textContent=`Outside the clock: ${rows.length} undated messages`;
+}
 function rebuild(reset=true){
-  if(D.meta.start===null)return;
+  refreshUndated();
+  if(D.meta.start===null){
+    current=null;selected=null;renderText();renderTurnUsage();renderEvents();renderUsage();
+    renderResponses();renderPosition([]);
+    $('prev-text').disabled=$('next-text').disabled=true;
+    if($('undated-select').options.length)showUndated();
+    return;
+  }
   const day=D.days.find(d=>d.date===$('day').value);
+  const session=(D.sessions||[]).find(s=>JSON.stringify([s.tool,s.session])===$('session').value);
   scopeLo=day?day.start:D.meta.start;scopeHi=day?day.end:D.meta.end;
+  if(!day&&session?.lo!==null&&session?.lo!==undefined){scopeLo=session.lo;scopeHi=session.hi;}
   if(reset){lo=scopeLo;hi=scopeHi;}
   humans=H.filter(scoped);usage=U.filter(scoped);marked=humans.filter(h=>h.moment);
   viewMessages=messages.filter(scoped);allMessages=messages.filter(scopeMatch);
-  points=[...new Set([...humans,...usage,...viewMessages].map(r=>r.t))].sort((a,b)=>a-b);
   now=Math.max(lo,Math.min(hi,now));
   text('range-start',stamp(lo));text('range-end',stamp(hi));
   text('marker-count',marked.length+' marked inputs');
+  $('next-idea').hidden=!H.some(h=>scopeMatch(h)&&h.moment);
   text('zoom-status',`${(Math.max(1,scopeHi-scopeLo)/Math.max(1,hi-lo)).toFixed(1)}× · ${stamp(lo)} – ${stamp(hi)}`);
   $('zoom-in').disabled=hi-lo<=1000;
   $('zoom-out').disabled=$('zoom-reset').disabled=lo===scopeLo&&hi===scopeHi;
   $('pan-prev').disabled=lo<=scopeLo;$('pan-next').disabled=hi>=scopeHi;
   buildMoments();buildClusters();render();drawTimeline();renderEvents();syncTimelineScrollbar();renderUsage();
+  if(!allMessages.length&&$('undated-select').options.length)showUndated();
 }
-function jump(t){pause();focusedId=null;now=Math.max(lo,Math.min(hi,t));text('gap-status','');render();}
+function jump(t){focusedId=null;now=Math.max(lo,Math.min(hi,t));render();}
 function jumpMessage(row){
-  if(row.t===null){$('undated-select').value=row.id;showUndated();return;}
-  pause();
-  if(!scopeMatch(row)){$('day').value='all';$('harness').value='all';now=row.t;rebuild();}
-  if(row.t<lo||row.t>hi){const width=hi-lo;lo=Math.max(scopeLo,Math.min(scopeHi-width,row.t-width/2));hi=Math.min(scopeHi,lo+width);}
-  now=row.t;focusedId=row.id;rebuild(false);
+  if(row.t===null){if(!filterMatch(row)){$('harness').value=$('session').value='all';refreshUndated();}$('undated-select').value=row.id;showUndated();return;}
+  if(!scopeMatch(row)){$('day').value='all';$('harness').value='all';$('session').value='all';now=row.t;rebuild();}
+  const outside=row.t<lo||row.t>hi;
+  if(outside){const width=hi-lo;lo=Math.max(scopeLo,Math.min(scopeHi-width,row.t-width/2));hi=Math.min(scopeHi,lo+width);}
+  now=row.t;focusedId=row.id;
+  if(outside)rebuild(false);else render();
 }
 function stepInput(direction){const candidate=direction>0?H.filter(scopeMatch).find(h=>h.t>now):H.filter(scopeMatch).reverse().find(h=>h.t<now);if(candidate)jumpMessage(candidate);}
 function stepText(direction){
-  if(current?.t===null){const index=D.undated.findIndex(r=>r.id===current.id);const row=D.undated[index+direction];if(row)jumpMessage(row);return;}
+  if(current?.t===null){const rows=D.undated.filter(filterMatch),index=rows.findIndex(r=>r.id===current.id);const row=rows[index+direction];if(row)jumpMessage(row);return;}
   const index=current?allMessages.findIndex(r=>r.id===current.id):-1;
   const candidate=allMessages[index+direction];if(candidate)jumpMessage(candidate);
 }
 function nextIdea(){const rows=H.filter(scopeMatch).filter(h=>h.moment);const h=rows.find(h=>h.t>now)||rows[0];if(h)jumpMessage(h);}
-function play(){
-  if(playing){pause();return;}if(now>=hi){now=lo;focusedId=null;}
-  playing=true;text('play','Ⅱ Pause');$('play').setAttribute('aria-label','Pause timeline');text('play-state','PLAYING');$('play-state').classList.add('playing');
-  lastFrame=performance.now();requestAnimationFrame(tick);
-}
-function tick(frame){
-  if(!playing)return;const elapsed=Math.min(1000,frame-lastFrame);lastFrame=frame;
-  let target=now+elapsed*Number($('speed').value)*60;
-  if($('skip').checked){const next=points.find(t=>t>now);if(next!==undefined&&next-now>30*60000){target=next;text('gap-status','Skipped an unobserved gap');}else text('gap-status','');}
-  focusedId=null;now=Math.min(hi,target);render();if(now>=hi)pause();else requestAnimationFrame(tick);
-}
 function zoom(factor){
-  pause();const width=Math.min(scopeHi-scopeLo,Math.max(1000,(hi-lo)*factor));
+  const width=Math.min(scopeHi-scopeLo,Math.max(1000,(hi-lo)*factor));
   lo=Math.max(scopeLo,Math.min(scopeHi-width,now-width/2));hi=lo+width;rebuild(false);
 }
 function pan(direction){
-  pause();const width=hi-lo;
+  const width=hi-lo;
   lo=Math.max(scopeLo,Math.min(scopeHi-width,lo+direction*width/2));hi=lo+width;
   focusedId=null;now=Math.max(lo,Math.min(hi,now));rebuild(false);
 }
@@ -80,6 +102,7 @@ function syncTimelineScrollbar(){
   const bar=$('timeline-scroll'),track=$('timeline-scroll-track');
   if(D.meta.start===null){bar.setAttribute('aria-disabled','true');return;}
   const available=Math.max(0,scopeHi-scopeLo-(hi-lo));
+  bar.hidden=available===0;
   const ratio=Math.max(1,(scopeHi-scopeLo)/Math.max(1,hi-lo));
   track.style.width=Math.max(bar.clientWidth+(available>0?1:0),Math.min(10000000,bar.clientWidth*ratio))+'px';
   bar.setAttribute('aria-disabled',String(available===0));
@@ -89,7 +112,7 @@ function syncTimelineScrollbar(){
 function scrollTimeline(){
   const bar=$('timeline-scroll'),maxScroll=bar.scrollWidth-bar.clientWidth;
   if(maxScroll<=0||Math.abs(bar.scrollLeft-syncedScrollLeft)<.5)return;
-  pause();const width=hi-lo;
+  const width=hi-lo;
   lo=scopeLo+(bar.scrollLeft/maxScroll)*(scopeHi-scopeLo-width);hi=lo+width;
   focusedId=null;now=Math.max(lo,Math.min(hi,now));rebuild(false);
 }
@@ -101,7 +124,7 @@ function beginTimelineDrag(event){
   if(event.button!==0||event.isPrimary===false)return;
   const box=$('timeline').getBoundingClientRect(),x=(event.clientX-box.left)/box.width*W;
   if(x<X0||x>X1)return;
-  pause();suppressTimelineClick=false;
+  suppressTimelineClick=false;
   timelineDrag={id:event.pointerId,start:x,end:x,clientX:event.clientX,lo,hi,active:false};
 }
 function moveTimelineDrag(event){
@@ -138,49 +161,95 @@ function finishTimelineDrag(event,cancelled=false){
 }
 function render(){
   text('clock',fmtTime.format(now)+' '+zone(now));text('date',fmtDate.format(now));
-  text('human-count',(lastAt(humans,now)+1).toLocaleString());text('agent-count',(lastAt(usage,now)+1).toLocaleString());
   $('scrub').value=String(Math.round((now-lo)/Math.max(1,hi-lo)*100000));$('scrub').setAttribute('aria-valuetext',stamp(now));
   const old=current?.id;
   current=viewMessages.find(r=>r.id===focusedId&&r.t===now)||viewMessages[lastAt(viewMessages,now)]||null;
-  selected=current?H.filter(h=>sameConversation(h,current)&&h.t<=now&&(h.t!==current.t||h.order<=current.order)).slice(-1)[0]||null:null;
+  selected=current?.role==='user'?current:inputByResponse.get(current?.id)||null;
   renderTurnUsage();
-  if(old!==current?.id){renderText();renderEvents();drawTimeline();}
-  const candidates=current?UP.filter(r=>sameConversation(r,current)&&r.t<=now&&(r.t!==current.t||r.order<=current.order)):[];
-  const update=candidates.slice(-1)[0];
-  text('update-title',update?(selected&&update.t<selected.t?'Earlier agent context':'Latest visible agent response'):'Agent response not yet visible');
-  text('agent-text',update?.text||'No following agent text has been reached for this input.');
-  text('update-time',update?stamp(update.t):'');text('update-source',update?`${update.id} · ${update.source}`:'');
-  const call=usage[lastAt(usage,now)];
-  text('last-agent-event',call?`${stamp(call.t)} · ${call.tool} · ${call.model} · ${call.output.toLocaleString()} output tokens`:'No metered model event reached in this view.');
-  const index=current?allMessages.findIndex(r=>r.id===current.id):-1;
-  text('message-position',current?`Message ${index+1} of ${allMessages.length} · ${current.id} · ${current.role==='user'?'Human':'Agent'}`:'No message reached');
-  $('prev-text').disabled=index<=0;$('next-text').disabled=index>=allMessages.length-1||!allMessages.length;
+  if(old!==current?.id){renderText();updateEventSelection();}
+  updateSelectedDot();
+  renderResponses();renderPosition(allMessages);
   $('prev').disabled=!H.filter(scopeMatch).some(h=>h.t<now);$('next').disabled=!H.filter(scopeMatch).some(h=>h.t>now);
   $('next-idea').disabled=!H.filter(scopeMatch).some(h=>h.moment);
-  const line=$('playhead');if(line){line.setAttribute('x1',xAt(now));line.setAttribute('x2',xAt(now));}
+  syncTimelineCursor();
+}
+function syncTimelineCursor(){
+  const line=$('playhead');if(!line)return;
+  const x=xAt(now);line.setAttribute('x1',x);line.setAttribute('x2',x);
+  const viewport=document.querySelector('.timeline-viewport');
+  if(timelineViewportWidth>0&&(x<viewport.scrollLeft+12||x>viewport.scrollLeft+timelineViewportWidth-12)){
+    viewport.scrollLeft=Math.max(0,x-timelineViewportWidth/2);
+  }
 }
 function renderText(){
-  if(!selected){text('input-title','No human input reached in this conversation');text('human-text','Advance the clock or choose a message.');text('input-meta','');text('input-source','');text('input-position','');$('moment-banner').hidden=true;return;}
+  if(!selected){$('input-title').hidden=true;text('human-text',current?'No user input in the available earlier source record.':'Choose a message.');text('input-meta','');text('input-source','');$('moment-banner').hidden=true;return;}
   const h=selected;
-  text('input-title',h.moment?.title||preview(h.text,110));text('human-text',h.text);
-  text('input-meta',`${stamp(h.t)} · ${h.tool} · ${h.category}`);text('input-source',`${h.source} · conversation ${h.session}`);
-  text('input-position',h.id);$('moment-banner').hidden=!h.moment;
+  $('input-title').hidden=!h.moment;text('input-title',h.moment?.title||'');text('human-text',h.text);
+  text('input-meta',`${h.t===null?'Timestamp unavailable':stamp(h.t)} · ${h.tool} · ${h.category}`);text('input-source',`${h.source} · conversation ${h.session}`);
+  $('moment-banner').hidden=!h.moment;
   if(h.moment)text('moment-banner',`◆ ${h.moment.kind} — ${h.moment.note}`);
 }
+function renderPosition(rows){
+  const index=current?rows.findIndex(row=>row.id===current.id):-1;
+  text('message-number',current?`${index+1} of ${rows.length}`:'No matching messages');
+  text('message-details',current?`· ${current.id} · ${current.role==='user'?'User':'Agent'}`:'');
+  const position=current?`${current.t===null?'Undated message':'Message'} ${index+1} of ${rows.length} · ${current.id} · ${current.role==='user'?'User':'Agent'}`:'No matching messages';
+  $('message-position').setAttribute('aria-label',position);$('message-position').title=position;
+  $('prev-text').disabled=index<=0;$('next-text').disabled=index>=rows.length-1||!rows.length;
+}
+function renderResponses(){
+  const list=$('agent-text'),key=selected?.id||(current?.role==='assistant'?current.id:'');
+  const changed=key!==responseScopeKey;
+  if(changed){
+    responseScopeKey=key;responseNodes.clear();activeResponse=null;
+    const rows=selected?(responsesByInput.get(selected.id)||[]):current?.role==='assistant'?[current]:[];
+    text('update-title',`Agent responses (${rows.length})`);
+    const fragment=document.createDocumentFragment();
+    for(const row of rows){
+      const article=document.createElement('article');article.className='agent-response';article.dataset.id=row.id;
+      const meta=document.createElement('p');meta.className='meta response-meta';
+      meta.textContent=`${row.id} · ${row.t===null?'Timestamp unavailable':stamp(row.t)} · ${row.source}`;
+      const body=document.createElement('div');body.className='response-text';body.textContent=row.text;
+      article.append(meta,body);fragment.append(article);responseNodes.set(row.id,article);
+    }
+    list.replaceChildren(fragment);
+    if(!rows.length)list.textContent=current?'No recorded response for this input.':'Choose a message.';
+  }
+  const active=current?.role==='assistant'?responseNodes.get(current.id)||null:null;
+  if(activeResponse!==active)activeResponse?.classList.remove('active');
+  active?.classList.add('active');activeResponse=active;
+  if(changed||responseCurrentId!==current?.id){
+    if(active){
+      const top=active.offsetTop,bottom=top+active.offsetHeight;
+      if(top<list.scrollTop||bottom>list.scrollTop+list.clientHeight)list.scrollTop=Math.min(top,bottom-list.clientHeight);
+    }else list.scrollTop=0;
+  }
+  responseCurrentId=current?.id;
+}
 function summarizeUsage(rows){
-  const priced=rows.filter(r=>r.estimated_usd!==null);
+  const priced=rows.filter(r=>(r.estimated_usd_min??r.estimated_usd)!==null);
+  const components=priced.length&&priced.every(r=>r.cost_components)?Object.fromEntries(['fresh_input','cache_read','cache_write','output'].map(key=>[key,{tokens:priced.reduce((n,r)=>n+r.cost_components[key].tokens,0),estimated_usd:priced.reduce((n,r)=>n+r.cost_components[key].estimated_usd,0)}])):null;
   return {calls:rows.length,input:rows.reduce((n,r)=>n+r.input,0),output:rows.reduce((n,r)=>n+r.output,0),
-    estimated_usd:priced.length?priced.reduce((n,r)=>n+r.estimated_usd,0):null,
+    cost_components:components,
+    input_complete:rows.every(r=>r.input_complete!==false),
+    estimated_usd:priced.length&&priced.every(r=>r.estimated_usd!==null)?priced.reduce((n,r)=>n+r.estimated_usd,0):null,
+    estimated_usd_min:priced.length?priced.reduce((n,r)=>n+(r.estimated_usd_min??r.estimated_usd),0):null,
+    estimated_usd_max:priced.length?priced.reduce((n,r)=>n+(r.estimated_usd_max??r.estimated_usd),0):null,
     priced_calls:priced.length,unpriced_calls:rows.length-priced.length,
     models:[...new Set(rows.map(r=>r.model))].sort()};
 }
 function spendLabel(total){
   if(!total.calls)return 'No recorded usage';
-  if(total.estimated_usd===null)return 'Unpriced';
-  return '$'+total.estimated_usd.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:6})+(total.unpriced_calls?' + unpriced calls':'');
+  const lo=total.estimated_usd_min??total.estimated_usd,hi=total.estimated_usd_max??total.estimated_usd;
+  if(lo===null)return 'Unpriced';
+  const usd=value=>'$'+value.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  let amount=total.estimated_usd===null?'':usd(total.estimated_usd);
+  if(lo!==hi)amount=amount?`~${amount} (range ${usd(lo)} - ${usd(hi)})`:`Range ${usd(lo)} - ${usd(hi)}`;
+  return amount+(total.unpriced_calls?' + unpriced calls':'');
 }
+function inputLabel(total){return total.input.toLocaleString()+(total.input_complete===false?'+ (incomplete)':'');}
 function tokenLabel(total){
-  return total.calls?`${total.input.toLocaleString()} in · ${total.output.toLocaleString()} out · ${total.calls.toLocaleString()} calls`:'Tokens unavailable · no metered calls recorded';
+  return total.calls?`${inputLabel(total)} in · ${total.output.toLocaleString()} out · ${total.calls.toLocaleString()} calls`:'Tokens unavailable · no metered calls recorded';
 }
 function coverageLabel(total){
   return `${total.priced_calls} / ${total.calls} recorded calls priced`+(total.unpriced_calls?' · priced subtotal only':'');
@@ -195,9 +264,10 @@ function renderTurnUsage(){
   text('turn-models',turn?turn.models.join(', ')||'Model unknown':'');
   text('turn-attribution',turn?coverageLabel(turn)+'. '+Object.keys(turn.attribution).join(' '):'');
 }
-function appendUsageRow(body,label,scope,total){
+function appendModelUsageRow(body,label,scope,total){
   const row=document.createElement('tr');
-  for(const value of [label,scope,total.calls,total.calls?total.input.toLocaleString():'—',total.calls?total.output.toLocaleString():'—',spendLabel(total)]){
+  const component=key=>{const part=total.cost_components?.[key];return part?`${part.tokens.toLocaleString()} / $${part.estimated_usd.toFixed(2)}`:'Unknown';};
+  for(const value of [label,scope,total.calls,...['fresh_input','cache_read','cache_write','output'].map(component),spendLabel(total)]){
     const cell=document.createElement('td');cell.textContent=value;row.append(cell);
   }
   body.append(row);
@@ -205,7 +275,7 @@ function appendUsageRow(body,label,scope,total){
 function renderUsage(){
   const visible=D.meta.start===null?[]:requests.filter(r=>r.t!==null&&scoped(r));
   const windowTotal=summarizeUsage(visible);
-  const filtered=D.meta.start!==null&&(lo!==D.meta.start||hi!==D.meta.end||$('harness').value!=='all'||requests.some(r=>r.t===null));
+  const filtered=D.meta.start!==null&&(lo!==D.meta.start||hi!==D.meta.end||$('harness').value!=='all'||$('session').value!=='all'||requests.some(r=>r.t===null));
   $('window-summary').hidden=!filtered;
   text('session-spend',spendLabel(A.total));text('session-tokens',tokenLabel(A.total));
   const models=A.total.models.length>1?`${A.total.models.length} models`:`Models: ${A.total.models[0]||'unknown (no usage)'}`;
@@ -216,7 +286,7 @@ function renderUsage(){
   const rows=filtered?visible:requests;
   const body=$('model-usage');body.replaceChildren();
   for(const model of [...new Set(rows.map(r=>r.model))].sort()){
-    appendUsageRow(body,model,filtered?'Visible range':'Entire session',summarizeUsage(rows.filter(r=>r.model===model)));
+    appendModelUsageRow(body,model,filtered?'Visible range':'Entire session',summarizeUsage(rows.filter(r=>r.model===model)));
   }
 }
 function initializeUsage(){
@@ -241,21 +311,30 @@ function initializeUsage(){
     const detail=document.createElement('details'),summary=document.createElement('summary');
     summary.textContent='Attribution';detail.append(summary,document.createTextNode(Object.entries(turn.attribution).map(([method,count])=>`${count} calls: ${method}`).join(' ')||'No recorded usage.'));
     cell.append(detail);row.append(cell);
-    for(const value of [turn.models.join(', ')||'Unknown',turn.calls,turn.calls?turn.input.toLocaleString():'—',turn.calls?turn.output.toLocaleString():'—',spendLabel(turn)]){
+    for(const value of [turn.models.join(', ')||'Unknown',turn.calls,turn.calls?inputLabel(turn):'—',turn.calls?turn.output.toLocaleString():'—',spendLabel(turn)]){
       const td=document.createElement('td');td.textContent=value;row.append(td);
     }
     body.append(row);
   }
-  if(A.unattributed.calls)appendUsageRow(body,'Unattributed',A.unattributed.models.join(', '),A.unattributed);
+  if(A.unattributed.calls){
+    const total=A.unattributed,row=document.createElement('tr');
+    for(const value of ['Unattributed',total.models.join(', '),total.calls,inputLabel(total),total.output.toLocaleString(),spendLabel(total)]){
+      const cell=document.createElement('td');cell.textContent=value;row.append(cell);
+    }
+    body.append(row);
+  }
   renderUsage();
 }
 function xAt(t){return X0+(t-lo)/Math.max(1,hi-lo)*(X1-X0);}
 function drawTimeline(){
   const svg=$('timeline');svg.replaceChildren();
+  W=Math.max(600,svg.clientWidth);X1=W-20;
+  timelineViewportWidth=document.querySelector('.timeline-viewport').clientWidth;
+  humanDots.clear();selectedDot=null;
   const tools=[...new Set([...H,...U,...UP].map(r=>r.tool))];
-  const lanes=[['Directions',46],['Human inputs',86],...tools.map((tool,i)=>[tool,122+i*36])];
+  const lanes=[['Directions',46],['User inputs',86],...tools.map((tool,i)=>[tool,122+i*36])];
   const bottom=Math.max(150,122+tools.length*36),axis=bottom+24;
-  svg.setAttribute('viewBox',`0 0 1100 ${axis+25}`);
+  svg.setAttribute('viewBox',`0 0 ${W} ${axis+25}`);
   svg.append(make('rect',{x:X0,y:22,width:X1-X0,height:bottom-22,fill:'#f6f8fa',rx:4}));
   for(const c of D.clusters){
     const members=c.inputs.map(id=>H.find(h=>h.id===id)).filter(scoped);if(members.length<2)continue;
@@ -281,7 +360,7 @@ function drawTimeline(){
   for(const h of humans){
     const dot=make('circle',{cx:xAt(h.t),cy:86,r:h.id===selected?.id?4.7:2.8,fill:h.id===selected?.id?'#173f50':'#2c8582',tabindex:'0',role:'button','aria-label':`${h.id} ${stamp(h.t)} ${preview(h.text,65)}`});
     dot.append(make('title',{},`${h.id} · ${stamp(h.t)}\n${preview(h.text,200)}`));
-    dot.addEventListener('click',e=>{e.stopPropagation();jumpMessage(h);});dot.addEventListener('keydown',e=>{if(e.key==='Enter'){e.stopPropagation();jumpMessage(h);}});svg.append(dot);
+    dot.addEventListener('click',e=>{e.stopPropagation();jumpMessage(h);});dot.addEventListener('keydown',e=>{if(e.key==='Enter'){e.stopPropagation();jumpMessage(h);}});svg.append(dot);humanDots.set(h.id,dot);
   }
   for(const h of marked){
     const x=xAt(h.t),dot=make('polygon',{points:`${x},38 ${x+5},46 ${x},54 ${x-5},46`,fill:'#c58c2f',tabindex:'0',role:'button','aria-label':h.moment.title});
@@ -289,6 +368,15 @@ function drawTimeline(){
     dot.addEventListener('click',e=>{e.stopPropagation();jumpMessage(h);});dot.addEventListener('keydown',e=>{if(e.key==='Enter'){e.stopPropagation();jumpMessage(h);}});svg.append(dot);
   }
   svg.append(make('line',{id:'playhead',x1:xAt(now),x2:xAt(now),y1:18,y2:bottom+4,stroke:'#df7556','stroke-width':2,'pointer-events':'none'}));
+  syncTimelineCursor();
+  updateSelectedDot();
+}
+function updateSelectedDot(){
+  const dot=humanDots.get(selected?.id)||null;
+  if(dot===selectedDot)return;
+  if(selectedDot){selectedDot.setAttribute('r','2.8');selectedDot.setAttribute('fill','#2c8582');}
+  selectedDot=dot;
+  if(dot){dot.setAttribute('r','4.7');dot.setAttribute('fill','#173f50');}
 }
 function buildMoments(){
   const list=$('moments');list.replaceChildren();
@@ -301,11 +389,14 @@ function buildClusters(){
   if(!list.children.length)list.textContent='No multi-direction groups in this view.';
 }
 function renderEvents(){
-  const query=$('search').value.toLowerCase().trim(),list=$('event-list');list.replaceChildren();
-  const rows=[...allMessages,...D.undated.filter(harnessMatch)].filter(r=>(r.id+' '+r.text+' '+(r.moment?.title||'')).toLowerCase().includes(query));
+  const query=$('search').value.toLowerCase().trim(),list=$('event-list');
+  const key=JSON.stringify([query,$('harness').value,$('session').value,scopeLo,scopeHi,allMessages.length]);
+  if(key===eventScopeKey){updateEventSelection();return;}
+  eventScopeKey=key;list.replaceChildren();eventButtons.clear();eventGeometry.clear();activeEventButton=null;
+  const rows=[...allMessages,...D.undated.filter(filterMatch)].filter(r=>(r.id+' '+r.text+' '+(r.moment?.title||'')).toLowerCase().includes(query));
   for(const row of rows){
     const button=document.createElement('button');button.className='event-row'+(row.id===current?.id?' active':'');button.dataset.id=row.id;
-    for(const [cls,value]of [['stamp',row.t===null?'Undated':stamp(row.t)],['badge',`${row.id} · ${row.role==='user'?'Human':'Agent'} · ${row.tool}`],['preview',preview(row.text,180)]]){const span=document.createElement('span');span.className=cls;span.textContent=value;button.append(span);}
+    for(const [cls,value]of [['stamp',row.t===null?'Undated':stamp(row.t)],['badge',`${row.id} · ${row.role==='user'?'User':'Agent'} · ${row.tool}`],['preview',preview(row.text,180)]]){const span=document.createElement('span');span.className=cls;span.textContent=value;button.append(span);}
     const turn=row.role==='user'?turnById.get(row.id):null;
     if(turn){
       const span=document.createElement('span');span.className='event-usage';
@@ -313,46 +404,57 @@ function renderEvents(){
       span.title=`Complete recorded turn; ${coverageLabel(turn)}. ${Object.keys(turn.attribution).join(' ')}`;
       button.append(span);
     }
-    button.addEventListener('click',()=>jumpMessage(row));list.append(button);
+    button.addEventListener('click',()=>{const top=list.scrollTop;jumpMessage(row);list.scrollTop=top;});
+    list.append(button);eventButtons.set(row.id,button);
   }
   if(!rows.length)list.textContent='No matching messages in this scope.';
+  eventViewportHeight=list.clientHeight;
+  for(const [id,button]of eventButtons)eventGeometry.set(id,[button.offsetTop,button.offsetHeight]);
+  updateEventSelection();
+}
+function updateEventSelection(){
+  const button=eventButtons.get(current?.id)||null;
+  if(activeEventButton!==button)activeEventButton?.classList.remove('active');
+  activeEventButton=button;button?.classList.add('active');
+  const geometry=eventGeometry.get(current?.id);
+  if(geometry){
+    const list=$('event-list'),[top,height]=geometry;
+    if(top<list.scrollTop)list.scrollTop=top;
+    else if(top+height>list.scrollTop+eventViewportHeight)list.scrollTop=top+height-eventViewportHeight;
+  }
 }
 function showUndated(){
   const row=D.undated.find(r=>r.id===$('undated-select').value);
   if(row){
-    pause();current=row;
-    const previous=D.undated.filter(r=>sameConversation(r,row)&&r.order<=row.order);
-    selected=previous.filter(r=>r.role==='user').slice(-1)[0]||null;
+    current=row;
+    selected=row.role==='user'?row:inputByResponse.get(row.id)||null;
     renderTurnUsage();
-    const response=previous.filter(r=>r.role==='assistant').slice(-1)[0];
-    text('human-text',selected?.text||'No human input in the available earlier source record.');
-    text('input-title','Undated conversation');text('input-meta',`${row.tool} · Timestamp unavailable`);
-    text('input-source',selected?.source||'');text('input-position',selected?.id||'');
-    text('agent-text',response?.text||'No earlier assistant text in the available source record.');
-    text('update-title','Agent response (source order only)');text('update-time','Timestamp unavailable');
-    text('update-source',response?`${response.id} · ${response.source}`:'');$('moment-banner').hidden=true;
-    const index=D.undated.findIndex(r=>r.id===row.id);
-    text('message-position',`Undated message ${index+1} of ${D.undated.length} · ${row.id}`);
-    $('prev-text').disabled=index<=0;$('next-text').disabled=index>=D.undated.length-1;
+    renderText();renderResponses();renderPosition(D.undated.filter(filterMatch));
     text('undated-text',row.text);text('undated-source',`${row.tool} · ${row.role} · ${row.id} · ${row.source} · Timestamp unavailable`);
     document.querySelector('.undated').open=true;renderEvents();
   }
 }
 for(const day of D.days){const option=document.createElement('option');option.value=day.date;option.textContent=day.label;$('day').append(option);}
+for(const session of D.sessions||[]){
+  const option=document.createElement('option');option.value=JSON.stringify([session.tool,session.session]);
+  option.textContent=`${session.start===null?'Undated':fmtSessionDate.format(session.start)} · ${session.tool} · ${preview(session.preview||session.session,45)}`;
+  option.title=session.session;$('session').append(option);
+}
 for(const tool of [...new Set([...H,...UP,...requests,...D.undated].map(r=>r.tool))]){const option=document.createElement('option');option.textContent=tool;$('harness').append(option);}
-for(const row of D.undated){const option=document.createElement('option');option.value=row.id;option.textContent=`${row.id} · ${row.role} · ${preview(row.text,80)}`;$('undated-select').append(option);}
+refreshUndated();
 if(D.undated.length){$('undated-select').value=D.undated[0].id;showUndated();}
 text('method',D.meta.method);
 initializeUsage();
 $('undated-select').addEventListener('change',showUndated);$('search').addEventListener('input',renderEvents);
 $('prev-text').addEventListener('click',()=>stepText(-1));$('next-text').addEventListener('click',()=>stepText(1));
+for(const id of ['day','harness'])$(id).addEventListener('change',()=>{if(id==='harness')$('session').value='all';focusedId=null;rebuild();});
+$('session').addEventListener('change',()=>{$('day').value='all';focusedId=null;const session=(D.sessions||[]).find(s=>JSON.stringify([s.tool,s.session])===$('session').value);$('harness').value=session?.tool||'all';if(session?.lo!==null&&session?.lo!==undefined)now=session.lo;rebuild();});
 if(D.meta.start!==null){
-  $('play').addEventListener('click',play);$('start').addEventListener('click',()=>jump(lo));$('end').addEventListener('click',()=>jump(hi));
+  $('start').addEventListener('click',()=>jump(lo));$('end').addEventListener('click',()=>jump(hi));
   $('prev').addEventListener('click',()=>stepInput(-1));$('next').addEventListener('click',()=>stepInput(1));
   $('next-idea').addEventListener('click',nextIdea);$('zoom-in').addEventListener('click',()=>zoom(.5));$('zoom-out').addEventListener('click',()=>zoom(2));
-  $('zoom-reset').addEventListener('click',()=>{pause();rebuild();});
+  $('zoom-reset').addEventListener('click',()=>rebuild());
   $('pan-prev').addEventListener('click',()=>pan(-1));$('pan-next').addEventListener('click',()=>pan(1));
-  for(const id of ['day','harness'])$(id).addEventListener('change',()=>{pause();focusedId=null;rebuild();});
   $('scrub').addEventListener('input',()=>jump(lo+Number($('scrub').value)/100000*(hi-lo)));
   $('timeline').addEventListener('pointerdown',beginTimelineDrag);
   $('timeline').addEventListener('pointermove',moveTimelineDrag);
@@ -361,22 +463,22 @@ if(D.meta.start!==null){
   $('timeline').addEventListener('lostpointercapture',event=>finishTimelineDrag(event,true));
   $('timeline').addEventListener('click',event=>{if(suppressTimelineClick){suppressTimelineClick=false;event.preventDefault();event.stopImmediatePropagation();}},true);
   $('timeline-scroll').addEventListener('scroll',scrollTimeline);
-  window.addEventListener('resize',syncTimelineScrollbar);
+  window.addEventListener('resize',()=>{drawTimeline();syncTimelineScrollbar();eventScopeKey=null;renderEvents();});
   $('timeline').addEventListener('click',event=>{const box=$('timeline').getBoundingClientRect(),x=(event.clientX-box.left)/box.width*W;if(x>=X0&&x<=X1)jump(lo+(x-X0)/(X1-X0)*(hi-lo));});
-  document.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea,button,summary,#timeline-scroll'))return;if(e.code==='Space'){e.preventDefault();play();}else if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();jump(now+(e.key==='ArrowRight'?1:-1)*5*60000);}else if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();stepInput(e.key==='ArrowDown'?1:-1);}});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+  document.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea,button,summary,#timeline-scroll'))return;if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();jump(now+(e.key==='ArrowRight'?1:-1)*5*60000);}else if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();stepInput(e.key==='ArrowDown'?1:-1);}});
   rebuild();
 }else{
   text('clock','Timing unavailable');text('date','Undated messages are preserved below; no dates inferred.');
   text('zoom-status','No timed records');text('input-title','Untimed conversation');
   $('timeline').append(make('text',{x:150,y:110,'font-size':24,fill:'#637689'},'No reliable timestamps; see the undated conversation below.'));
-  for(const el of document.querySelectorAll('.transport button,.transport select,.transport input,.zoom-controls button,.text-controls button,.filters button,#scrub,#day,#harness'))el.disabled=true;
+  for(const el of document.querySelectorAll('.transport button,.transport select,.transport input,.zoom-controls button,.text-controls button,.filters button,#scrub,#day'))el.disabled=true;
+  $('next-idea').hidden=true;
   if(D.undated.length)showUndated();else renderEvents();
   syncTimelineScrollbar();
 }
 window.vennPlayback={
-  state:()=>({now,lo,hi,scopeLo,scopeHi,playing,selected:selected?.id||null,message:current?.id||null,visibleHumanInputs:humans.length,visibleModelEvents:usage.length}),
+  state:()=>({now,lo,hi,scopeLo,scopeHi,selected:selected?.id||null,message:current?.id||null,visibleHumanInputs:humans.length,visibleModelEvents:usage.length}),
   jumpToInput:id=>{const row=H.find(r=>r.id===id);if(row)jumpMessage(row);},
-  jumpToMessage:id=>{const row=[...messages,...D.undated].find(r=>r.id===id);if(row)jumpMessage(row);},pause
+  jumpToMessage:id=>{const row=[...messages,...D.undated].find(r=>r.id===id);if(row)jumpMessage(row);}
 };
 const initial=[...messages,...D.undated].find(r=>r.id===decodeURIComponent(location.hash.slice(1)));if(initial)jumpMessage(initial);

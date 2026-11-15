@@ -59,9 +59,11 @@ def integer(value):
     return value
 
 
-def tokens(input_tokens, output_tokens, cached=0, written=0):
+def tokens(input_tokens, output_tokens, cached=None, written=None):
     result = dict(input=integer(input_tokens), output=integer(output_tokens),
-                  cached_read=integer(cached), cache_write=integer(written))
+                  cached_read=integer(cached) if cached is not None else 0,
+                  cache_write=integer(written) if written is not None else 0,
+                  cached_read_known=cached is not None, cache_write_known=written is not None)
     if result["cached_read"] + result["cache_write"] > result["input"]:
         raise ValueError("Cached input exceeds inclusive input tokens.")
     return result
@@ -97,6 +99,8 @@ def parse(path, spec, source_id):
             if kind == "usage" and harness == "claude":
                 for field in ("input", "output", "cached_read", "cache_write"):
                     prior[field] = max(prior[field], event[field])
+                for field in ("cached_read_known", "cache_write_known", "input_complete"):
+                    prior[field] = prior.get(field, False) or event.get(field, False)
                 prior["timestamp"] = max(prior["timestamp"] or "", event["timestamp"] or "") or None
             elif any(prior.get(k) != event.get(k) for k in fields):
                 warnings.append(f"Conflicting duplicate {kind} identity at {event['source']}; first record retained.")
@@ -138,7 +142,7 @@ def parse(path, spec, source_id):
                 emit("usage", line, time, identity, model=record.get("model") or "unknown",
                      turn_id=record.get("turn_id"),
                      **tokens(usage["input_tokens"], usage["output_tokens"],
-                              usage.get("cached_input_tokens", 0), usage.get("cache_write_tokens", 0)))
+                              usage.get("cached_input_tokens"), usage.get("cache_write_tokens")))
         return events, warnings, len(records)
 
     model, raw_count, boundary = "unknown", 0, None
@@ -176,7 +180,7 @@ def parse(path, spec, source_id):
                 emit("usage", line, time, payload.get("response_id", line), model=model,
                      turn_id=payload.get("turn_id"),
                      **tokens(usage["input_tokens"], usage["output_tokens"],
-                              usage.get("cached_input_tokens", 0), usage.get("cache_write_input_tokens", 0)))
+                              usage.get("cached_input_tokens"), usage.get("cache_write_input_tokens")))
         elif harness == "copilot":
             data = record.get("data") or {}
             identity = record.get("id", line)
@@ -202,7 +206,7 @@ def parse(path, spec, source_id):
                 emit("usage", line, time, identity, model=usage.get("model") or "unknown",
                      turn_id=usage.get("interactionId"),
                      **tokens(usage["inputTokens"], usage["outputTokens"],
-                              usage.get("cacheReadTokens", 0), usage.get("cacheWriteTokens", 0)))
+                              usage.get("cacheReadTokens"), usage.get("cacheWriteTokens")))
             elif kind == "tool.execution_start":
                 emit("tool", line, time, data.get("toolCallId", identity),
                      name=data.get("toolName") or data.get("name") or "unknown")
@@ -217,10 +221,12 @@ def parse(path, spec, source_id):
                 if usage:
                     request = payload.get("id") or record.get("requestId") or identity
                     emit("usage", line, time, request, model=payload.get("model") or "unknown",
+                         input_complete=("cache_read_input_tokens" in usage
+                                         and "cache_creation_input_tokens" in usage),
                          **tokens(usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
                                   + usage.get("cache_creation_input_tokens", 0), usage["output_tokens"],
-                                  usage.get("cache_read_input_tokens", 0),
-                                  usage.get("cache_creation_input_tokens", 0)))
+                                  usage.get("cache_read_input_tokens"),
+                                  usage.get("cache_creation_input_tokens")))
                 for item in content if isinstance(content, list) else []:
                     if item.get("type") == "tool_use":
                         emit("tool", line, time, item.get("id", line), name=item.get("name", "unknown"))

@@ -23,20 +23,21 @@ Unavailable harnesses: <names and reasons>.
 
 Gather and freeze the selected logs with hashes and provenance. Analyze all genuine
 prompts and visible assistant messages, usage/model mix, coverage, activity patterns,
-and how human direction shaped decisions and outcomes. Include logistics in the
+and how the user's direction shaped decisions and outcomes. Refer to the person
+as "the user", not "the human", and preserve source quotations verbatim. Include logistics in the
 replay, but mark only material directions as qualitative evidence.
 
-Use the Venn report/player design. Produce report.html, report.pdf, and an offline
+Use the existing report/player design. Produce report.html, report.pdf, and an offline
 standalone player.html. Include right-aligned previous/next message arrows,
 drag-to-zoom with a horizontal scrollbar and reset, and time-of-day axis labels.
 Show models, input/output tokens, estimated full-session/zoom-window spend, and
 whole-turn spend with a per-input ledger. Supply <dated cache-aware pricing card,
 or unavailable>; preserve its snapshot/hash, label API-equivalent estimates,
 partial coverage and inferred turn attribution, and retain unattributed calls.
-The Venn theme is fixed; its content and metrics are driven by the logs.
+The visual theme is fixed; its content and metrics are driven by the logs.
 Keep totals in one compact strip; show the visible-range subtotal only when
 zoomed/filtered. Attach model/cost/token metadata below the user prompt and on
-human entries in the full session log, rather than above the transcript.
+user entries in the full session log, rather than above the transcript.
 
 Read context and supply reviewed evidence-linked annotations. State unknown timing,
 usage, costs, missing exports, and unverified outcomes. Never execute transcript
