@@ -35,6 +35,10 @@ class DiscoveryTests(unittest.TestCase):
         self.environment.start()
         self.addCleanup(self.environment.stop)
 
+    def test_junction_detection_without_platform_reparse_tags(self):
+        with patch("review.stat", new=object()):
+            self.assertFalse(is_junction(self.root))
+
     @unittest.skipUnless(os.name == "nt", "Windows junctions only")
     def test_junction_detection_and_overwrite_protection_without_path_is_junction(self):
         output = self.root / "junction-report"

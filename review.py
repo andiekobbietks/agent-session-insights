@@ -48,7 +48,8 @@ def sha256(path):
 
 
 def is_junction(path):
-    return getattr(path.lstat(), "st_reparse_tag", None) == stat.IO_REPARSE_TAG_MOUNT_POINT
+    mount_point_tag = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", None)
+    return mount_point_tag is not None and getattr(path.lstat(), "st_reparse_tag", None) == mount_point_tag
 
 
 def check_report_dependencies():
