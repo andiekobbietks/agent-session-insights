@@ -426,6 +426,11 @@ def publish(output, collection, events, analysis, public_base_url=None):
         page.on("request", lambda request: network.append(request.url))
         page.goto((output / "player.html").as_uri(), wait_until="load")
         state = lambda: page.evaluate("window.vennPlayback.state()")
+        assert page.locator("#elide-inactive").is_checked()
+        dated_records = data["humans"] + data["updates"] + data["usage"]
+        expected_elided = [day["date"] for day in data["days"]
+                           if not any(day["start"] <= row["t"] <= day["end"] for row in dated_records)]
+        assert state()["elidedDays"] == expected_elided
         assert page.locator("#session-spend").count() == 1
         assert not page.locator("#usage-details").evaluate("(el)=>el.open")
         assert page.locator(".usage-card").bounding_box()["height"] < 120
@@ -585,8 +590,10 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 assert snapshot["window"]["visibleHumanInputs"] == sum(day["start"] <= row["t"] <= day["end"] for row in data["humans"])
                 check_usage(snapshot)
             page.locator("#day").select_option("all")
+            page.locator("#elide-inactive").uncheck()
             page.locator("#scrub").evaluate('(el)=>{el.value=50000;el.dispatchEvent(new Event("input",{bubbles:true}));}')
             assert abs(state()["now"] - (data["meta"]["start"] + data["meta"]["end"]) / 2) < 1
+            page.locator("#elide-inactive").check()
             page.locator("#start").click()
         else:
             assert page.locator("#clock").inner_text() == "Timing unavailable"
