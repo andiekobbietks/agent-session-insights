@@ -607,6 +607,49 @@ class PlayerTests(unittest.TestCase):
         """, arg=color)
         self.assertFalse(self.errors)
 
+    def test_navigation_hover_states_use_matching_readable_theme_colors(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First request", "one"),
+            ("user", start + 60000, "Next request", "one"),
+        ])
+        for theme in ("light", "dark"):
+            self.page.emulate_media(color_scheme=theme, reduced_motion="reduce")
+            self.page.reload(wait_until="networkidle")
+            for selector in ("#next", "#next-text"):
+                with self.subTest(theme=theme, selector=selector):
+                    button = self.page.locator(selector)
+                    self.page.mouse.move(0, 0)
+                    normal = button.evaluate("""el => {
+                        const style = getComputedStyle(el);
+                        return {background:style.backgroundColor,color:style.color};
+                    }""")
+                    button.hover()
+                    hover = button.evaluate("""el => {
+                        const style = getComputedStyle(el);
+                        return {background:style.backgroundColor,color:style.color};
+                    }""")
+                    self.assertNotEqual(hover["background"], normal["background"])
+                    self.assertEqual(hover["color"], normal["color"])
+                    contrast = button.evaluate("""el => {
+                        const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+                        const luminance = color => {
+                            ctx.fillStyle = color;ctx.fillRect(0,0,1,1);
+                            const rgb = [...ctx.getImageData(0,0,1,1).data].slice(0,3).map(v => {
+                                v /= 255;return v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4;
+                            });
+                            return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
+                        };
+                        const style = getComputedStyle(el);
+                        const a = luminance(style.backgroundColor), b = luminance(style.color);
+                        return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+                    }""")
+                    self.assertGreaterEqual(contrast, 4.5)
+                    button.evaluate("el => el.disabled = true")
+                    self.assertEqual(button.evaluate("el => getComputedStyle(el).backgroundColor"), normal["background"])
+                    button.evaluate("el => el.disabled = false")
+        self.assertFalse(self.errors)
+
     def test_adjacent_message_controls_zoom_time_ticks_and_full_record_search(self):
         start = 1794071182211
         data = self.open_player([
