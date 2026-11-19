@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from zipfile import ZipFile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import discover_repository, matches_repository, path_key, select_sessions
@@ -347,6 +349,130 @@ class DiscoveryTests(unittest.TestCase):
         with patch("builtins.input", return_value=""), patch("render.publish"), self.assertRaises(SystemExit) as failure:
             self.command("repo", "--repo", self.repo, "--noagent")
         self.assertEqual(failure.exception.code, 1)
+
+    def test_logs_only_archives_raw_selected_logs_without_review_dependencies(self):
+        source = self.source("copilot", "selected")
+        with source.open("ab") as stream:
+            stream.write(b'Not valid JSON; raw export preserves this tail.\r\n')
+        expected = source.read_bytes()
+        self.source("claude", "unselected", time=LATER)
+        output = self.root / "logs"
+        with (patch.dict(sys.modules, {"playwright.sync_api": None}),
+              patch("review.check_report_dependencies") as check,
+              patch("review.collect") as collect_logs,
+              patch("review.analyze") as analyze_logs,
+              patch("review.run_review") as run,
+              patch("review.launch_report_agent") as launch):
+            text = self.command("repo", "--repo", self.repo, "--logs-only",
+                                "--session", "copilot:selected", "--output", output)
+        for operation in (check, collect_logs, analyze_logs, run, launch):
+            operation.assert_not_called()
+        archive_path = output / "session-logs.zip"
+        self.assertIn(str(archive_path), text)
+        self.assertEqual(list(output.iterdir()), [archive_path])
+        with ZipFile(archive_path) as archive:
+            self.assertIsNone(archive.testzip())
+            self.assertEqual(set(archive.namelist()), {"logs/S01.jsonl", "manifest.json", "discovery.json"})
+            manifest = json.loads(archive.read("manifest.json"))
+            spec, = manifest["sources"]
+            self.assertEqual((spec["harness"], spec["session"]), ("copilot", "selected"))
+            self.assertEqual(archive.read(spec["path"]), expected)
+            self.assertEqual(spec["sha256"], hashlib.sha256(expected).hexdigest())
+            self.assertEqual(spec["bytes"], len(expected))
+            self.assertEqual(len(json.loads(archive.read("discovery.json"))["sessions"]), 2)
+
+    def test_logs_only_selection_defaults_filters_and_portable_manifest(self):
+        sources = {
+            "older": self.source("copilot", "older"),
+            "newest": self.source("copilot", "newest", time=LATER),
+            "claude": self.source("claude", "claude"),
+            "codex": self.source("codex", "codex"),
+        }
+        self.source("copilot", "unrelated", str(self.repo) + "-other")
+        self.source("copilot", "child", subagent=True)
+        cases = (
+            ([], ["newest"]),
+            (["--all"], ["newest", "claude", "codex", "older"]),
+            (["--all", "--harness", "copilot",
+              "--root", sources["older"].parent.parent], ["newest", "older"]),
+            (["--session", "codex:codex", "--session", "copilot:older"], ["codex", "older"]),
+        )
+        for index, (selection, expected) in enumerate(cases):
+            with self.subTest(selection=selection):
+                output = self.root / f"logs-{index}"
+                self.command("repo", "--repo", self.repo, "--logs-only", "--output", output,
+                             "--timezone", "UTC", *selection)
+                extracted = self.root / f"extracted-{index}"
+                with ZipFile(output / "session-logs.zip") as archive:
+                    manifest = json.loads(archive.read("manifest.json"))
+                    self.assertEqual([s["session"] for s in manifest["sources"]], expected)
+                    for spec in manifest["sources"]:
+                        self.assertEqual(archive.read(spec["path"]), sources[spec["session"]].read_bytes())
+                    archive.extractall(extracted)
+                prepared = self.root / f"prepared-{index}"
+                self.command("prepare", "--manifest", extracted / "manifest.json", "--output", prepared)
+                collection = json.loads((prepared / "collection.json").read_text())
+                self.assertEqual([s["session"] for s in collection["sources"]], expected)
+                self.assertEqual(collection["timezone"], "UTC")
+
+    def test_logs_only_default_destination_and_privacy_warning(self):
+        self.source("codex", "selected")
+        original = Path.cwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, original)
+        stderr = io.StringIO()
+        with (patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo), "--logs-only"]),
+              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr)):
+            main()
+        self.assertTrue((self.root / "agent-session-reports" / self.repo.name / "session-logs.zip").is_file())
+        self.assertIn("unredacted raw logs", stderr.getvalue())
+
+    def test_logs_only_preserves_destination_files_and_refuses_existing_archive(self):
+        self.source("copilot", "selected")
+        output = self.root / "existing"
+        output.mkdir()
+        sentinel = output / "report.html"
+        sentinel.write_bytes(b"Keep existing report.")
+        args = ("repo", "--repo", self.repo, "--logs-only", "--output", output)
+        with patch("builtins.input") as prompt:
+            self.command(*args)
+            archive = output / "session-logs.zip"
+            original = archive.read_bytes()
+            with self.assertRaises(SystemExit) as failure:
+                self.command(*args)
+        self.assertEqual(failure.exception.code, 1)
+        prompt.assert_not_called()
+        self.assertEqual(archive.read_bytes(), original)
+        self.assertEqual(sentinel.read_bytes(), b"Keep existing report.")
+
+    def test_logs_only_removes_partial_archive_when_a_source_changes(self):
+        source = self.source("copilot", "selected")
+        output = self.root / "changed"
+        read_bytes = Path.read_bytes
+
+        def changing_read(path):
+            data = read_bytes(path)
+            if path == source:
+                with source.open("ab") as stream:
+                    stream.write(b"changed")
+            return data
+
+        stderr = io.StringIO()
+        with (patch.object(Path, "read_bytes", changing_read),
+              patch.object(sys, "argv", ["review.py", "repo", "--repo", str(self.repo),
+                                        "--logs-only", "--output", str(output)]),
+              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr),
+              self.assertRaises(SystemExit) as failure):
+            main()
+        self.assertEqual(failure.exception.code, 1)
+        self.assertIn("Source changed while being copied", stderr.getvalue())
+        self.assertFalse((output / "session-logs.zip").exists())
+
+    def test_logs_only_no_matches_does_not_create_destination(self):
+        output = self.root / "missing-logs"
+        with self.assertRaises(SystemExit):
+            self.command("repo", "--repo", self.repo, "--logs-only", "--output", output)
+        self.assertFalse(output.exists())
 
     def test_repo_progress_is_flushed_before_discovery_and_generation(self):
         self.source("copilot", "selected")

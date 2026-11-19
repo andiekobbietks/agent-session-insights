@@ -13,6 +13,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from zipfile import ZIP_DEFLATED, ZipFile
 from zoneinfo import ZoneInfo
 
 if __package__:
@@ -605,19 +606,62 @@ def agent_review_results(output, selected):
     return collection
 
 
+def archive_session_logs(output, selected, inventory, timezone):
+    output.mkdir(parents=True, mode=0o700, exist_ok=True)
+    archive_path = output / "session-logs.zip"
+    manifest = {
+        "title": f"Session review: {Path(inventory['repository']).name}",
+        "timezone": timezone,
+        "sources": [],
+        "missing_harnesses": inventory["unavailable"],
+    }
+    with archive_path.open("xb") as stream:
+        try:
+            archive_path.chmod(0o600)
+            with ZipFile(stream, "w", compression=ZIP_DEFLATED) as archive:
+                for index, session in enumerate(selected, 1):
+                    original = Path(session["path"])
+                    before = original.stat()
+                    data = original.read_bytes()
+                    after = original.stat()
+                    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                        raise ValueError(f"Source changed while being copied: {original}; retry with a frozen copy.")
+                    snapshot = f"logs/S{index:02d}{original.suffix}"
+                    archive.writestr(snapshot, data)
+                    manifest["sources"].append({
+                        "harness": session["harness"], "session": session["session"],
+                        "path": snapshot, "original_path": str(original),
+                        "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data),
+                    })
+                for name, value in (("manifest.json", manifest), ("discovery.json", inventory)):
+                    archive.writestr(name, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+        except BaseException:
+            stream.close()
+            archive_path.unlink()
+            raise
+    print(f"Session logs archive: {archive_path}")
+    print("Privacy: archive contains unredacted raw logs; review before sharing.", file=sys.stderr)
+
+
 def report_repository(args):
     output = (args.output or Path.cwd() / "agent-session-reports"
               / args.repo.expanduser().resolve().name).expanduser().resolve()
-    approved = confirm_output(output, [args.pricing.expanduser()] if args.pricing else [], clear=False)
+    approved = None
+    if not args.logs_only:
+        approved = confirm_output(output, [args.pricing.expanduser()] if args.pricing else [], clear=False)
     print(f"Finding sessions for {args.repo}...", flush=True)
     inventory = discover_repository(args.repo, args.harness, args.root)
     for warning in inventory["warnings"]:
         print(f"Discovery warning: {warning}", file=sys.stderr)
     selected = select_sessions(inventory, args.session, all_sessions=args.all_sessions)
-    confirm_output(output, [Path(session["path"]) for session in selected]
-                   + ([args.pricing.expanduser()] if args.pricing else []), approved=approved)
+    if not args.logs_only:
+        confirm_output(output, [Path(session["path"]) for session in selected]
+                       + ([args.pricing.expanduser()] if args.pricing else []), approved=approved)
     for session in selected:
         print(f'Selected {session["harness"]}:{session["session"]} ({session["started_at"] or "undated"})')
+    if args.logs_only:
+        archive_session_logs(output, selected, inventory, args.timezone)
+        return
     manifest = {
         "title": f"Session review: {Path(inventory['repository']).name}",
         "timezone": args.timezone,
@@ -702,7 +746,7 @@ def main():
             "No manifest is needed. By default, select the newest matching session and "
             "launch its harness headlessly; the CLI must be installed and signed in, and "
             "normal model charges apply. Use --noagent for a Python-only report without "
-            "qualitative annotations or model calls."
+            "qualitative annotations or model calls, or --logs-only to ZIP raw logs without a review."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -710,13 +754,17 @@ def main():
             "  python -m agent_session_insights repo --repo C:\\Source\\my-project\n"
             "  python -m agent_session_insights repo --repo C:\\Source\\my-project --all\n"
             "  python -m agent_session_insights repo --repo C:\\Source\\my-project --session claude:SESSION_ID\n"
-            "  python -m agent_session_insights repo --repo C:\\Source\\my-project --noagent --output .\\python-review\n\n"
+            "  python -m agent_session_insights repo --repo C:\\Source\\my-project --noagent --output .\\python-review\n"
+            "  python -m agent_session_insights repo --repo C:\\Source\\my-project --all --logs-only --output .\\logs\n\n"
             "Default output: .\\agent-session-reports\\my-project under your current directory,\n"
             "not necessarily inside the reviewed repository. Existing reviews ask before overwriting (default No).\n"
             "--harness filters session discovery; it does not override the reviewing harness.\n"
             "For multiple sessions, the first selected session's harness reviews the combined evidence.\n"
             "Completion lists the three report paths; supporting evidence and a reusable\n"
-            "manifest.json are also saved. Use run with that manifest to regenerate a report."
+            "manifest.json are also saved. Use run with that manifest to regenerate a report.\n"
+            "--logs-only writes session-logs.zip inside the output directory, without analysis,\n"
+            "an agent, or rendering dependencies. Existing ZIPs are never overwritten.\n"
+            "The ZIP contains unredacted raw logs; review before sharing."
         ),
     )
     repository.add_argument("--repo", type=Path, required=True, help="Accessible local repository directory to match against native session metadata.")
@@ -725,10 +773,11 @@ def main():
     selection = repository.add_mutually_exclusive_group()
     selection.add_argument("--session", action="append", default=[], help="Select an ID or harness:ID; repeat for multiple sessions.")
     selection.add_argument("--all", dest="all_sessions", action="store_true", help="Include every matching session, optionally restricted by --harness.")
-    repository.add_argument("--output", type=Path, help="Output directory; asks before replacing an existing review (default No). Default: agent-session-reports/<repo-name> in the current directory.")
+    repository.add_argument("--output", type=Path, help="Output directory for the report or session-logs.zip; asks before replacing an existing review (default No). Existing ZIPs are never overwritten. Default: agent-session-reports/<repo-name> in the current directory.")
     repository.add_argument("--timezone", default="America/Los_Angeles", help="Report IANA timezone (default: America/Los_Angeles).")
     repository.add_argument("--pricing", type=Path, help="Override bundled dated retail API rates with a supplied pricing card. Missing cache counts are estimated or shown as a range.")
     repository.add_argument("--noagent", action="store_true", help="Render directly in Python without launching a harness or qualitative review.")
+    repository.add_argument("--logs-only", action="store_true", help="ZIP selected raw session logs and a reusable manifest into session-logs.zip in the output directory; skip all analysis, agents and rendering.")
     for command, help_text, description, example in (
         (
             "prepare", "Create frozen evidence for annotation from a manifest; no agent or HTML/PDF/player.",
@@ -775,7 +824,7 @@ def main():
     args = parser.parse_args()
     os.umask(0o077)
     try:
-        if args.command in ("repo", "run"):
+        if args.command == "run" or (args.command == "repo" and not args.logs_only):
             check_report_dependencies()
         if args.command == "discover":
             if args.repo:

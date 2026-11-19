@@ -89,6 +89,7 @@ reviewer for those histories.
 | `--root PATH` | Override the native history directory; requires `--harness`. |
 | `--output PATH` | Override the report destination. |
 | `--noagent` | Skip the harness and qualitative annotations. |
+| `--logs-only` | Save selected raw logs as `session-logs.zip` in the output directory; no analysis, agent, or report. |
 | `--timezone ZONE` | IANA report timezone; default `America/Los_Angeles`. |
 | `--pricing PATH` | Override the bundled, dated retail API pricing card. |
 
@@ -99,6 +100,30 @@ agent-session-insights repo --repo C:\Source\my-project --harness copilot --all 
 ```
 
 All commands have `--help` with command-specific examples.
+
+### Gather logs without a review
+
+```powershell
+agent-session-insights repo --repo C:\Source\my-project --all --logs-only --output .\collected-logs
+```
+
+This writes `.\collected-logs\session-logs.zip` without running analysis, calling
+a model, or requiring Chromium/Playwright. The same selection rules apply:
+newest matching session by default, repeated `--session` for specific sessions,
+or `--all` for every match; `--harness` and `--root` also work.
+Omit `--output` to use the normal default destination directory.
+
+The ZIP contains byte-for-byte copies of the selected history files under
+`logs`, a `manifest.json` with source hashes, and `discovery.json`. It does not
+include auxiliary session files or subagent histories. Extract it and use
+`run --manifest` with the extracted manifest to generate a report later.
+Report-only `--pricing`, `--timezone`, and `--noagent` do not trigger analysis;
+the timezone is saved in the manifest for later use.
+
+Existing destination files are left untouched, and an existing
+`session-logs.zip` is refused; choose another output directory or move the
+previous ZIP. **Raw logs are not redacted** and may contain credentials,
+private conversation text, and local paths. Review before sharing.
 
 ## Outputs and safety
 
