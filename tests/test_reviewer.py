@@ -314,6 +314,49 @@ class SourceTests(unittest.TestCase):
                 self.assertLessEqual(heading["y"] - section["y"], 18)
             browser.close()
 
+    def test_report_interactions_are_visually_separate_cards(self):
+        from playwright.sync_api import sync_playwright
+        collection = {"title": "Interactions", "timezone": "America/Los_Angeles",
+                      "sources": [], "missing_harnesses": {}, "warnings": []}
+        events = [
+            {"id": identifier, "kind": kind, "text": text, "harness": "copilot",
+             "session": "test", "source": f"S01:{i}", "t": epoch(TIME) + i * 1000,
+             "timestamp": timestamp(epoch(TIME) + i * 1000)}
+            for i, (identifier, kind, text) in enumerate((
+                ("H001", "user", "First prompt"), ("R001", "assistant", "First reply"),
+                ("H002", "user", "Second prompt"), ("R002", "assistant", "Second reply"),
+            ), 1)
+        ]
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": [
+            {"input": "H001", "response": "R001", "title": "First interaction",
+             "category": "Scope", "analysis": "First analysis"},
+            {"input": "H002", "response": "R002", "title": "Second interaction",
+             "category": "Correction", "analysis": "Second analysis"},
+        ]})
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            for width in (1280, 390):
+                for theme in ("light", "dark"):
+                    for media in ("screen", "print"):
+                        with self.subTest(width=width, theme=theme, media=media):
+                            page.set_viewport_size({"width": width, "height": 1000})
+                            page.emulate_media(color_scheme=theme, media=media)
+                            page.set_content(report_html(collection, events, analysis))
+                            cards = page.locator("#directions .decision")
+                            self.assertEqual(cards.count(), 2)
+                            first, second = [cards.nth(i).bounding_box() for i in range(2)]
+                            self.assertGreaterEqual(second["y"] - first["y"] - first["height"], 24)
+                            for card in cards.all():
+                                self.assertTrue(card.evaluate("""el => {
+                                    const s = getComputedStyle(el);
+                                    return parseFloat(s.borderTopWidth) > 0 && parseFloat(s.borderBottomWidth) > 0
+                                        && parseFloat(s.borderRightWidth) > 0 && parseFloat(s.paddingTop) >= 16;
+                                }"""))
+                                self.assertEqual(card.locator(".quote").count(), 2)
+                            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+            browser.close()
+
     def test_model_comparison_aligns_token_totals_and_costs_with_distinct_shares(self):
         from playwright.sync_api import sync_playwright
         collection = {"title": "Comparison", "timezone": "UTC", "sources": [],

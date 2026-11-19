@@ -60,9 +60,15 @@ button:hover,.usage-table-scroll th{background:var(--cp-surface-soft)}
 .prompt-usage strong,.event-row .event-usage{color:color-mix(in srgb,var(--cp-success) 70%,var(--cp-text))}
 #agent-text,.agent-response,.event-row[data-role="assistant"]{background:var(--cp-surface-soft);border-left-color:var(--cp-border-strong);color:var(--cp-text)}
 .event-row[data-role="assistant"]{border-left:3px solid var(--cp-border-strong)}
+.event-row{grid-template-columns:52px 145px 48px 100px minmax(0,1fr);border-bottom:1px solid var(--cp-border)}
+.event-row>span{min-width:0}
+.event-row .event-id{font:650 11px var(--cp-mono);overflow-wrap:anywhere}
+.event-row .event-harness{font-size:10px;color:var(--cp-text-muted);overflow-wrap:anywhere}
+.event-row .event-usage{grid-column:5}
 .event-row[data-role="user"]:hover,.event-row[data-role="user"].active{background:color-mix(in srgb,var(--cp-success) 16%,var(--cp-surface))}
 .event-row[data-role="assistant"]:hover,.event-row[data-role="assistant"].active,.agent-response.active{background:var(--cp-bg-elevated)}
 .agent-response.active{border-left-color:var(--cp-border-strong)}
 .event-row.active{box-shadow:inset 0 0 0 1px var(--cp-border-strong)}
 .event-row[data-role="user"].active{box-shadow:inset 0 0 0 1px var(--cp-success)}
 @media(max-width:480px){.filters{margin:4px 0;gap:6px}.workspace{margin:4px 0}}
+@media(max-width:800px){.event-row{grid-template-columns:44px minmax(0,1fr) 42px 88px}.event-row .preview,.event-row .event-usage{grid-column:2/-1}}

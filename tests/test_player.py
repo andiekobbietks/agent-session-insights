@@ -218,6 +218,48 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(self.page.locator("#event-list").evaluate("(el) => el.scrollTop"), 0)
         self.assertFalse(self.errors)
 
+    def test_log_separates_id_role_harness_and_message_columns(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "First prompt", "one"),
+            ("assistant", start + 1000, "Reply", "one"),
+            ("user", start + 2000, "Other harness prompt", "two"),
+            ("user", None, "Undated prompt", "three"),
+        ], usages=[{"t": start + 500, "model": "m", "input": 100, "output": 10}], pricing=PRICING,
+           message_fields={"H001": {"harness": "copilot"}, "R002": {"harness": "copilot"},
+                           "H003": {"harness": "claude"}, "H004": {"harness": "codex"}})
+        url = self.page.url
+        selectors = [".event-id", ".stamp", ".event-role", ".event-harness", ".preview"]
+        for width in (1280, 390):
+            for log_only in (False, True):
+                with self.subTest(width=width, log_only=log_only):
+                    self.page.set_viewport_size({"width": width, "height": 900})
+                    self.page.goto(url + ("?view=log" if log_only else ""), wait_until="networkidle")
+                    for identifier, role, harness in (
+                        ("H001", "User", "GitHub Copilot"), ("R002", "Agent", "GitHub Copilot"),
+                        ("H003", "User", "Claude Code"), ("H004", "User", "Codex"),
+                    ):
+                        row = self.page.locator(f'.event-row[data-id="{identifier}"]')
+                        self.assertEqual(row.locator(".event-id").inner_text(), identifier)
+                        self.assertEqual(row.locator(".event-role").inner_text(), role)
+                        self.assertEqual(row.locator(".event-harness").inner_text(), harness)
+                        boxes = [row.locator(selector).bounding_box() for selector in selectors]
+                        columns = boxes if width == 1280 else boxes[:4]
+                        for left, right in zip(columns, columns[1:]):
+                            self.assertLessEqual(left["x"] + left["width"], right["x"])
+                        if width == 390:
+                            self.assertGreaterEqual(boxes[4]["y"], max(box["y"] + box["height"] for box in columns))
+                        self.assertTrue(row.evaluate("el => el.scrollWidth <= el.clientWidth"))
+                    self.assertEqual(self.page.locator('[data-id="H004"] .stamp').inner_text(), "Undated")
+                    prompt = self.page.locator('.event-row[data-id="H001"]')
+                    self.assertEqual(prompt.locator(".event-usage").count(), 1)
+                    self.assertEqual(self.page.locator('[data-id="R002"] .event-usage').count(), 0)
+                    self.assertEqual(prompt.locator(".preview").bounding_box()["x"],
+                                     prompt.locator(".event-usage").bounding_box()["x"])
+                    self.page.locator('.event-row[data-id="R002"]').click()
+                    self.assertEqual(self.state()["message"], "R002")
+                    self.assertFalse(self.errors)
+
     def test_session_log_scrolls_independently_with_wheel_and_keyboard(self):
         start = 1794071182211
         for width in (1280, 390):
@@ -325,6 +367,14 @@ class PlayerTests(unittest.TestCase):
         start = 1794071182211
         self.page.set_viewport_size({"width": 1280, "height": 900})
         self.open_player([("user", start, "Prompt", "one"), ("assistant", start + 60000, "Reply", "one")])
+        self.assertEqual(self.page.locator(".shortcut").count(), 0)
+        self.assertTrue(self.page.evaluate("""() => {
+            const filters = document.querySelector('.filters').getBoundingClientRect();
+            const controls = [...document.querySelectorAll('.filters > label,.filters > button:not([hidden])')];
+            const bottom = Math.max(...controls.map(el => el.getBoundingClientRect().bottom));
+            const timeline = document.querySelector('.timeline').getBoundingClientRect();
+            return filters.bottom - bottom <= 1 && timeline.top - bottom <= 10;
+        }"""))
         self.assertLess(self.page.locator(".activity").bounding_box()["y"], 700)
         self.page.set_viewport_size({"width": 390, "height": 844})
         self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), 390)
@@ -844,6 +894,8 @@ class PlayerTests(unittest.TestCase):
             ("assistant", start + 1000, "First reply", "one"),
             ("user", start + 2000, "Second input", "one"),
             ("assistant", start + 3000, "Second reply", "one"),
+            ("user", start + 4000, "Third input", "one"),
+            ("user", start + 5000, "Fourth input", "one"),
         ], usages=[{"t": start + 500, "model": "m", "input": 100, "output": 10}], pricing=PRICING)
         url = self.page.url
         for theme in ("light", "dark"):
@@ -864,7 +916,12 @@ class PlayerTests(unittest.TestCase):
                             agent:palette('#agent-text'),agentRow:palette('.event-row[data-id="R002"]'),
                             userLegend:style('.legend .human').backgroundColor,
                             agentLegend:style('.legend .agent').backgroundColor,
-                            userDot:style('#timeline circle[aria-label^="H003"]').fill
+                            userDot:style('#timeline circle[aria-label^="H003"]').fill,
+                            divider:style('.card').borderBottomColor,
+                            separators:[...document.querySelectorAll('.event-row')].map(row => {
+                                const s = getComputedStyle(row);
+                                return [s.borderBottomWidth,s.borderBottomStyle,s.borderBottomColor];
+                            })
                         };
                     }""")
                     self.assertEqual(colors["user"], colors["userRow"])
@@ -878,6 +935,7 @@ class PlayerTests(unittest.TestCase):
                     self.assertEqual(colors["user"]["border"], colors["userLegend"])
                     self.assertEqual(colors["user"]["border"], colors["userDot"])
                     self.assertEqual(colors["agent"]["border"], colors["agentLegend"])
+                    self.assertEqual(colors["separators"], [["1px", "solid", colors["divider"]]] * 6)
                     self.page.evaluate("window.vennPlayback.jumpToMessage('R002')")
                     self.assertEqual(self.page.locator(".agent-response.active").evaluate(
                         "el => getComputedStyle(el).borderLeftColor"), colors["agent"]["border"])

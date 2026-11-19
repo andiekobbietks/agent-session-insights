@@ -465,7 +465,7 @@ function renderEvents(){
   const rows=[...allMessages,...D.undated.filter(filterMatch)].filter(r=>(r.id+' '+r.text+' '+(r.moment?.title||'')).toLowerCase().includes(query));
   for(const row of rows){
     const button=document.createElement('button');button.className='event-row'+(row.id===current?.id?' active':'');button.dataset.id=row.id;button.dataset.role=row.role;
-    for(const [cls,value]of [['stamp',row.t===null?'Undated':stamp(row.t)],['badge',`${row.id} · ${row.role==='user'?'User':'Agent'} · ${row.tool}`],['preview',preview(row.text,180)]]){const span=document.createElement('span');span.className=cls;span.textContent=value;button.append(span);}
+    for(const [cls,value]of [['event-id',row.id],['stamp',row.t===null?'Undated':stamp(row.t)],['badge event-role',row.role==='user'?'User':'Agent'],['event-harness',row.tool],['preview',preview(row.text,180)]]){const span=document.createElement('span');span.className=cls;span.textContent=value;button.append(span);}
     const turn=row.role==='user'?turnById.get(row.id):null;
     if(turn){
       const span=document.createElement('span');span.className='event-usage';
