@@ -386,6 +386,68 @@ class PlayerTests(unittest.TestCase):
         self.assertTrue(frame.locator(".activity").is_visible())
         self.assertFalse(self.errors)
 
+    def test_report_and_embedded_views_share_theme_and_follow_live_changes(self):
+        start = 1794071182211
+        self.open_player([
+            ("user", start, "Prompt", "one"),
+            ("assistant", start + 1000, "Reply", "one"),
+        ])
+        collection = {"title": "Player test", "timezone": "America/Los_Angeles",
+                      "sources": [], "missing_harnesses": {}, "warnings": []}
+        report = Path(self.directory.name) / "report.html"
+        report.write_text(report_html(collection, self.events, self.analysis), encoding="utf-8")
+        for theme, system in (("light", "dark"), ("dark", "light")):
+            with self.subTest(theme=theme, system=system):
+                self.page.emulate_media(color_scheme=system, reduced_motion="reduce")
+                self.page.goto(report.as_uri() + f"?scoutTheme={theme}", wait_until="networkidle")
+                views = self.page.frames
+                self.assertEqual(len(views), 3)
+                for frame in views:
+                    frame.wait_for_function("document.documentElement.dataset.theme === " + json.dumps(theme))
+                appearance = """() => ({
+                    background:getComputedStyle(document.body).backgroundColor,
+                    color:getComputedStyle(document.body).color,
+                    font:getComputedStyle(document.body).fontFamily
+                })"""
+                expected = self.page.evaluate(appearance)
+                for frame in views[1:]:
+                    self.assertEqual(frame.evaluate(appearance), expected)
+                    self.assertEqual(
+                        frame.locator("#next-idea").evaluate("el => getComputedStyle(el).backgroundColor"),
+                        frame.locator(".deck").evaluate("el => getComputedStyle(el).backgroundColor"),
+                    )
+                if theme == "light":
+                    self.assertEqual(expected["background"], "rgb(255, 255, 255)")
+                    red, green, blue = map(int, expected["color"].removeprefix("rgb(").removesuffix(")").split(","))
+                    self.assertGreater(blue, red)
+                    self.assertGreater(blue, green)
+                changed = "dark" if theme == "light" else "light"
+                self.page.evaluate("theme => document.documentElement.dataset.theme = theme", changed)
+                for frame in views:
+                    frame.wait_for_function("document.documentElement.dataset.theme === " + json.dumps(changed))
+                expected = self.page.evaluate(appearance)
+                for frame in views[1:]:
+                    self.assertEqual(frame.evaluate(appearance), expected)
+        self.assertFalse(self.errors)
+
+    def test_standalone_theme_follows_system_and_honors_explicit_override(self):
+        self.open_player([("user", 1794071182211, "Prompt", "one")])
+        url = self.page.url
+        for view in ("", "?view=log"):
+            self.page.emulate_media(color_scheme="light")
+            self.page.goto(url + view, wait_until="networkidle")
+            self.page.emulate_media(color_scheme="dark")
+            self.page.wait_for_function("document.documentElement.dataset.theme === 'dark'")
+            self.page.emulate_media(color_scheme="light")
+            self.page.wait_for_function("document.documentElement.dataset.theme === 'light'")
+            separator = "&" if view else "?"
+            for theme in ("light", "dark"):
+                with self.subTest(view=view, theme=theme):
+                    self.page.emulate_media(color_scheme="dark" if theme == "light" else "light")
+                    self.page.goto(url + view + separator + f"scoutTheme={theme}", wait_until="networkidle")
+                    self.assertEqual(self.page.locator("html").get_attribute("data-theme"), theme)
+        self.assertFalse(self.errors)
+
     def test_report_session_log_is_a_separate_pane_and_navigates_replay(self):
         start = 1794071182211
         self.open_player([

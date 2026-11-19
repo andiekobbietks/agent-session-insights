@@ -18,26 +18,25 @@ else:
 
 ASSETS = Path(__file__).parent / "assets"
 REPORT_CSS = """
-:root{--ink:#203547;--muted:#637689;--gold:#c58c2f;--teal:#2c8582;--navy:#102637}
-*{box-sizing:border-box}body{font:15px/1.45 system-ui,sans-serif;color:var(--ink);background:#f3f6f8;margin:0;overflow-wrap:anywhere}
-main{max-width:1120px;margin:20px auto;padding:0 24px}header{background:var(--navy);color:#ecf4f8;border-radius:14px;padding:18px}
-h1{font-size:34px;line-height:1.15;letter-spacing:-.03em;margin:6px 0 10px}h2{font-size:22px;border-bottom:1px solid #dde5eb;padding-bottom:5px;margin:12px 0 8px}section>h2:first-child{margin-top:0}
+*{box-sizing:border-box}body{font:15px/1.45 var(--cp-font);color:var(--cp-text);background:var(--cp-bg);margin:0;overflow-wrap:anywhere}
+main{max-width:1120px;margin:20px auto;padding:0 24px}header{background:var(--cp-accent);color:var(--cp-accent-fg);border-radius:14px;padding:18px}
+h1{font-size:34px;line-height:1.15;letter-spacing:-.03em;margin:6px 0 10px}h2{font-size:22px;border-bottom:2px solid var(--cp-border);padding-bottom:5px;margin:12px 0 8px}section>h2:first-child{margin-top:0}
 h3{font-size:17px;margin:8px 0 5px}p,ul,ol{margin:8px 0}.eyebrow{font-size:11px;font-weight:750;letter-spacing:.16em}.muted{color:var(--muted)}
-section{background:white;border:1px solid #dde5eb;border-radius:10px;padding:16px;margin:12px 0}a{color:#1f6b83}header a{color:#ffd58c}
+section{background:var(--cp-surface);border:1px solid var(--cp-border);border-radius:10px;padding:16px;margin:12px 0}a{color:var(--cp-link)}header a{color:inherit;font-weight:650}
 nav{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;font-size:13px}.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:12px 0}
-.stat{display:flex;flex-direction:column;justify-content:space-between;background:white;border:1px solid #dde5eb;border-radius:10px;padding:12px}.stat b{display:block;color:var(--teal);font-size:27px}.stat span{font-size:12px}
+.stat{display:flex;flex-direction:column;justify-content:space-between;background:var(--cp-surface-soft);border:1px solid var(--cp-border);border-top:3px solid var(--cp-accent);border-radius:10px;padding:12px}.stat b{display:block;color:var(--cp-accent);font-size:27px}.stat span{font-size:12px}
 .report-period{font-size:12px;margin:6px 0 12px}.timing-summary{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 24px;margin:8px 0;font-size:14px}.timing-summary strong{color:var(--teal);font-size:17px}.timing-summary small{font-size:12px}
-table{border-collapse:collapse;width:100%;font-size:12px}td,th{padding:6px 8px;border-bottom:1px solid #dde5eb;text-align:left;vertical-align:top}th{background:#edf3f6}.table-scroll{overflow:auto}
-.decision{border-left:3px solid var(--gold);padding:4px 12px;margin:12px 0}.quote,.message{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.45 system-ui,sans-serif;background:#f5f8fa;padding:10px;border-left:3px solid var(--teal)}
-.agent{border-left-color:#839daf}.source{font-size:11px;color:var(--muted)}.playback-frame{width:100%;height:1250px;border:1px solid #dde5eb;border-radius:10px}
-.session-log-frame{display:block;width:100%;height:clamp(300px,50vh,600px);border:0}.session-log-heading{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px 16px}.session-log-heading h2{flex:1;margin:0}.session-log-heading input{max-width:100%;width:300px;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--muted);border-radius:6px}
-.record-usage{font-size:11px;color:var(--teal);margin:0 0 8px;padding:6px 10px;background:#edf6f4;border-left:3px solid var(--teal)}
+table{border-collapse:collapse;width:100%;font-size:12px}td,th{padding:6px 8px;border-bottom:1px solid var(--cp-border);text-align:left;vertical-align:top}th{background:var(--cp-surface-soft)}.table-scroll{overflow:auto}
+.decision{border-left:3px solid var(--gold);padding:4px 12px;margin:12px 0}.quote,.message{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.45 var(--cp-font);background:var(--cp-surface-soft);padding:10px;border-left:3px solid var(--teal)}
+.agent{border-left-color:var(--cp-border-strong)}.source{font-size:11px;color:var(--muted)}.playback-frame{width:100%;height:1250px;border:1px solid var(--cp-border);border-radius:10px}
+.session-log-frame{display:block;width:100%;height:clamp(300px,50vh,600px);border:0}.session-log-heading{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px 16px}.session-log-heading h2{flex:1;margin:0}.session-log-heading input{max-width:100%;width:300px;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--cp-border-strong);border-radius:6px;background:var(--cp-surface);color:var(--cp-text)}
+.record-usage{font-size:11px;color:var(--teal);margin:0 0 8px;padding:6px 10px;background:var(--cp-surface-soft);border-left:3px solid var(--teal)}
 .model-comparison table{min-width:850px;font-variant-numeric:tabular-nums}.model-comparison th:nth-child(n+2),.model-comparison td:nth-child(n+2){text-align:right}.model-comparison td:nth-child(5),.model-comparison td:nth-child(7){font-weight:700}.comparison-legend{display:flex;gap:18px;font-size:12px}.comparison-legend span::before{content:"";display:inline-block;width:12px;height:8px;margin-right:6px;background:var(--teal)}.comparison-legend .cost-share::before{background:var(--gold)}.model-chart text{fill:var(--ink)}
 .playback-poster{display:none;width:100%}.chart{display:block;width:100%;height:auto}details{margin:6px 0}summary{cursor:pointer;font-weight:650}code{font-size:.85em}.detail-scroll{max-height:420px;overflow:auto}
 @media(max-width:600px){main{padding:0 14px;margin:16px auto}h1{font-size:27px}section{padding:16px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat.cost{grid-column:1/-1;flex-direction:row;justify-content:flex-start;align-items:baseline;gap:8px;flex-wrap:wrap}header{padding:20px}}
-@media print{body{background:white;font-size:10pt}main{padding:0;margin:0;max-width:none}nav,.playback-frame,.session-log-frame,.session-log-heading input{display:none}.playback-poster{display:block}
+@media print{body{background:var(--cp-bg);font-size:10pt}main{padding:0;margin:0;max-width:none}nav,.playback-frame,.session-log-frame,.session-log-heading input{display:none}.playback-poster{display:block}
  .model-comparison table{min-width:0;font-size:9px}
-section{border:0;padding:0;margin:12px 0}header{background:#edf3f6;color:var(--ink);padding:14px}.stats{grid-template-columns:repeat(5,minmax(0,1fr))}.stat{padding:8px}.stat.cost{grid-column:auto;flex-direction:column;align-items:stretch;justify-content:space-between}
+section{border:0;padding:0;margin:12px 0}header{background:var(--cp-surface-soft);color:var(--ink);padding:14px}.stats{grid-template-columns:repeat(5,minmax(0,1fr))}.stat{padding:8px}.stat.cost{grid-column:auto;flex-direction:column;align-items:stretch;justify-content:space-between}
 h2,h3,summary{break-after:avoid}.decision,.stat,tr{break-inside:avoid}.quote,.message{font-size:9pt}details{break-inside:auto}.detail-scroll{max-height:none;overflow:visible}a{color:inherit;text-decoration:none}}
 """
 
@@ -211,7 +210,9 @@ def player_html(data):
         "{{RANGE}}": "selected interaction", "{{HUMANS}}": str(len(data["humans"])),
         "{{RESPONSES}}": str(len(data["updates"])), "{{CALLS}}": str(len(data["usage"])),
         "{{UNDATED}}": str(len(data["undated"])), "{{UNDATED_HIDDEN}}": "" if data["undated"] else "hidden",
-        "/* STYLE */": (ASSETS / "player.css").read_text(encoding="utf-8"),
+        "/* THEME SCRIPT */": (ASSETS / "theme.js").read_text(encoding="utf-8"),
+        "/* STYLE */": ((ASSETS / "player.css").read_text(encoding="utf-8")
+                       + (ASSETS / "theme.css").read_text(encoding="utf-8")),
         "/* SCRIPT */": (ASSETS / "player.js").read_text(encoding="utf-8"),
     }
     for old, new in substitutions.items():
@@ -239,7 +240,9 @@ def report_html(collection, events, analysis):
     turn_time = duration(timing["total_turn_ms"])
     if timing["timed_turns"] < timing["total_turns"] and timing["total_turn_ms"] is not None:
         turn_time += " (partial)"
-    html = [f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{REPORT_CSS}</style></head><body><main>',
+    theme_script = (ASSETS / "theme.js").read_text(encoding="utf-8")
+    theme_css = (ASSETS / "theme.css").read_text(encoding="utf-8")
+    html = [f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><script>{theme_script}</script><style>{REPORT_CSS}{theme_css}</style></head><body><main>',
             f'<header><p class="eyebrow">AGENT SESSION INSIGHTS</p><h1>{title}</h1><p>{e(review_prose(analysis["interpretation"]["summary"]))}</p><a href="player.html">Open standalone session player</a></header>',
             '<nav aria-label="Report contents">' + "".join(f'<a href="#{key}">{label}</a>' for key, label in [
                 ("coverage", "Coverage"), ("usage", "Usage"), ("time", "Activity"), ("directions", "User direction"),

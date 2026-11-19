@@ -391,7 +391,7 @@ function drawTimeline(){
   const lanes=[['Directions',46],['User inputs',86],...tools.map((tool,i)=>[tool,122+i*36])];
   const bottom=Math.max(150,122+tools.length*36),axis=bottom+24;
   svg.setAttribute('viewBox',`0 0 ${W} ${axis+25}`);
-  svg.append(make('rect',{x:X0,y:22,width:X1-X0,height:bottom-22,fill:'#f6f8fa',rx:4}));
+  svg.append(make('rect',{x:X0,y:22,width:X1-X0,height:bottom-22,fill:'var(--cp-surface-soft)',rx:4}));
   for(const period of D.day_night||[]){
     const start=Math.max(lo,period.start),end=Math.min(hi,period.end);if(end<=start)continue;
     const xStart=xAt(start),xEnd=xAt(end);if(xEnd<=xStart)continue;
@@ -402,20 +402,20 @@ function drawTimeline(){
   for(const day of elidedGroups){
     if(day.end<lo||day.start>hi)continue;
     const x=xAt(Math.max(lo,Math.min(hi,day.start)));
-    const marker=make('line',{x1:x,x2:x,y1:22,y2:bottom,stroke:'#8194a2','stroke-width':1.5,'stroke-dasharray':'3 4',class:'elided-day'});
+    const marker=make('line',{x1:x,x2:x,y1:22,y2:bottom,stroke:'var(--cp-border-strong)','stroke-width':1.5,'stroke-dasharray':'3 4',class:'elided-day'});
     marker.append(make('title',{},`Inactive day${day.label.includes(' – ')?'s':''} elided · ${day.label}`));svg.append(marker);
   }
   for(const c of D.clusters){
     const members=c.inputs.map(id=>H.find(h=>h.id===id)).filter(scoped);if(members.length<2)continue;
     const x=xAt(Math.max(c.start,lo)),end=xAt(Math.min(c.end,hi));
-    svg.append(make('rect',{x,y:23,width:Math.max(3,end-x),height:bottom-23,fill:'#f8dda1','fill-opacity':'.3'}));
+    svg.append(make('rect',{x,y:23,width:Math.max(3,end-x),height:bottom-23,fill:'var(--cp-warning)','fill-opacity':'.15'}));
   }
-  for(const [label,y]of lanes){svg.append(make('text',{x:5,y:y+4,'font-size':12,fill:'#526d80'},label));svg.append(make('line',{x1:X0,x2:X1,y1:y,y2:y,stroke:'#e0e7ec'}));}
+  for(const [label,y]of lanes){svg.append(make('text',{x:5,y:y+4,'font-size':12,fill:'var(--cp-text-muted)'},label));svg.append(make('line',{x1:X0,x2:X1,y1:y,y2:y,stroke:'var(--cp-border)'}));}
   for(let i=0;i<7;i++){
     const t=timeAtFraction(i/6),x=xAt(t);
     const label=hi-lo>=86400000?fmtStamp.format(t):hi-lo<300000?fmtTime.format(t):fmtHour.format(t);
-    svg.append(make('line',{x1:x,x2:x,y1:24,y2:bottom,stroke:'#d6e0e7','stroke-dasharray':'3 4'}));
-    svg.append(make('text',{x,y:axis,class:'axis-label','font-size':12,fill:'#526d80','text-anchor':i===0?'start':i===6?'end':'middle'},label));
+    svg.append(make('line',{x1:x,x2:x,y1:24,y2:bottom,stroke:'var(--cp-border)','stroke-dasharray':'3 4'}));
+    svg.append(make('text',{x,y:axis,class:'axis-label','font-size':12,fill:'var(--cp-text-muted)','text-anchor':i===0?'start':i===6?'end':'middle'},label));
   }
   for(const [tool,y]of lanes.slice(2)){
     const bins=new Map(),bin=Math.min(900000,Math.max(1000,(hi-lo)/80));
@@ -432,11 +432,11 @@ function drawTimeline(){
     dot.addEventListener('click',e=>{e.stopPropagation();jumpMessage(h);});dot.addEventListener('keydown',e=>{if(e.key==='Enter'){e.stopPropagation();jumpMessage(h);}});svg.append(dot);humanDots.set(h.id,dot);
   }
   for(const h of marked){
-    const x=xAt(h.t),dot=make('polygon',{points:`${x},38 ${x+5},46 ${x},54 ${x-5},46`,fill:'#c58c2f',tabindex:'0',role:'button','aria-label':h.moment.title});
+    const x=xAt(h.t),dot=make('polygon',{points:`${x},38 ${x+5},46 ${x},54 ${x-5},46`,fill:'var(--cp-warning)',tabindex:'0',role:'button','aria-label':h.moment.title});
     dot.append(make('title',{},`${stamp(h.t)} · ${h.moment.title}`));
     dot.addEventListener('click',e=>{e.stopPropagation();jumpMessage(h);});dot.addEventListener('keydown',e=>{if(e.key==='Enter'){e.stopPropagation();jumpMessage(h);}});svg.append(dot);
   }
-  svg.append(make('line',{id:'playhead',x1:xAt(now),x2:xAt(now),y1:18,y2:bottom+4,stroke:'#df7556','stroke-width':2,'pointer-events':'none'}));
+  svg.append(make('line',{id:'playhead',x1:xAt(now),x2:xAt(now),y1:18,y2:bottom+4,stroke:'var(--cp-danger)','stroke-width':2,'pointer-events':'none'}));
   syncTimelineCursor();
   updateSelectedDot();
 }
@@ -544,7 +544,7 @@ if(D.meta.start!==null){
 }else{
   text('clock','Timing unavailable');text('date','Undated messages are preserved below; no dates inferred.');
   text('zoom-status','No timed records');text('input-title','Untimed conversation');
-  $('timeline').append(make('text',{x:150,y:110,'font-size':24,fill:'#637689'},'No reliable timestamps; see the undated conversation below.'));
+  $('timeline').append(make('text',{x:150,y:110,'font-size':24,fill:'var(--cp-text-muted)'},'No reliable timestamps; see the undated conversation below.'));
   for(const el of document.querySelectorAll('.transport button,.transport select,.transport input,.zoom-controls button,.text-controls button,.filters button,#scrub,#day'))el.disabled=true;
   $('next-idea').hidden=true;
   if(D.undated.length)showUndated();else renderEvents();

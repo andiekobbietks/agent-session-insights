@@ -143,6 +143,11 @@ accounting, normalized events, coverage, verification, frozen pricing, and
 private source snapshots. Repository reports also save `discovery.json` and a
 reusable `manifest.json`, plus `annotations.json` when agent-reviewed.
 
+Reports and players share bold blue typography, white light-mode surfaces, and
+a navy dark mode. They follow your system theme; embedded replay and log panes
+follow the surrounding report. Append `?scoutTheme=light` or `?scoutTheme=dark`
+to a report or standalone player URL to override the system preference.
+
 **Overwrite protection:** existing reviews require `Overwrite? [y/N]?`
 confirmation; only `y` or `yes` proceeds. An empty answer or closed stdin cancels.
 Directories containing unrelated files or selected inputs are refused.
