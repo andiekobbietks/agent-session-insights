@@ -369,22 +369,30 @@ class SourceTests(unittest.TestCase):
                           }}}}
         base = {"model": "known", "input": 1000000, "output": 100000, "cached_read": 0, "cache_write": 0}
         cases = [
-            ([base, {**base, "model": "unknown"}], "Unpriced"),
             ([{**base, "cached_read_known": False, "cache_write_known": False}], "Range"),
             ([{**base, "input_complete": False}], "Unpriced"),
             ([{**base, "input": 0, "output": 0}], "$0.00"),
         ]
+        def render(calls):
+            events = [{**call, "id": f"A{i:03d}", "identity": str(i), "kind": "usage",
+                       "harness": "copilot", "session": "test", "source": f"S01:{i}",
+                       "timestamp": None, "t": None} for i, call in enumerate(calls, 1)]
+            analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+            page.set_content(report_html(collection, events, analysis))
+            return page.locator("#model-comparison tbody tr")
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
+            with self.subTest(expected="partial"):
+                rows = render([base, {**base, "model": "unknown"}])
+                self.assertEqual(rows.locator("td:last-child").all_text_contents(), ["100.0%", "Unpriced"])
+                self.assertIn("Cost share (partial)", page.locator("#model-comparison thead").inner_text())
+                self.assertIn("1 unpriced requests are excluded", page.locator("#model-comparison + .source").inner_text())
+                self.assertEqual(page.locator('.model-chart rect[fill="var(--gold)"]').count(), 1)
+                self.assertIn("Cost share unpriced", page.locator(".model-chart").text_content())
             for calls, expected in cases:
                 with self.subTest(expected=expected):
-                    events = [{**call, "id": f"A{i:03d}", "identity": str(i), "kind": "usage",
-                               "harness": "copilot", "session": "test", "source": f"S01:{i}",
-                               "timestamp": None, "t": None} for i, call in enumerate(calls, 1)]
-                    analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
-                    page.set_content(report_html(collection, events, analysis))
-                    rows = page.locator("#model-comparison tbody tr")
+                    rows = render(calls)
                     self.assertIn(expected, rows.inner_text() if rows.count() == 1 else rows.last.inner_text())
                     self.assertEqual(rows.locator("td:last-child").all_text_contents(), ["Unavailable"] * len(calls))
                     self.assertEqual(page.locator('.model-chart rect[fill="var(--gold)"]').count(), 0)

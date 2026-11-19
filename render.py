@@ -291,6 +291,15 @@ def report_html(collection, events, analysis):
     cost_shares_known = (not total["unpriced_calls"] and total["estimated_usd"] is not None
                          and total["estimated_usd"] > 0
                          and total["estimated_usd_min"] == total["estimated_usd_max"])
+    cost_shares_partial = (not cost_shares_known and bool(total["unpriced_calls"])
+                           and total["estimated_usd"] is not None and total["estimated_usd"] > 0
+                           and total["estimated_usd_min"] == total["estimated_usd_max"])
+
+    def cost_share_of(summary):
+        if not (cost_shares_known or cost_shares_partial) or summary["estimated_usd"] is None:
+            return None
+        return 100 * summary["estimated_usd"] / total["estimated_usd"]
+
     html.append(f'<p>{e(analysis["cost"])}</p><div id="model-comparison" class="model-comparison">')
     rows = []
     for model in analysis["models"]:
@@ -298,34 +307,40 @@ def report_html(collection, events, analysis):
         tokens = number(summary["input"] + summary["output"])
         if not summary["input_complete"]:
             tokens += "+ (incomplete)"
-        cost_share = (f'{100 * summary["estimated_usd"] / total["estimated_usd"]:.1f}%'
-                      if cost_shares_known else "Unavailable")
+        share = cost_share_of(summary)
+        cost_share = (f'{share:.1f}%' if share is not None
+                      else "Unpriced" if cost_shares_partial else "Unavailable")
         rows.append((model["model"], number(summary["calls"]), input_number(summary), number(summary["output"]),
                      tokens, f'{model["token_percent"]:.1f}%' if token_shares_known else "Unavailable",
                      spend(summary), cost_share))
     html.append(table(["Model", "Requests", "Input tokens", "Output tokens", "Total tokens",
-                       "Token share", "Estimated cost (USD)", "Cost share"], rows))
+                       "Token share", "Estimated cost (USD)",
+                       "Cost share (partial)" if cost_shares_partial else "Cost share"], rows))
+    partial_note = (f' Cost shares are partial: they divide priced spend only; '
+                    f'{number(total["unpriced_calls"])} unpriced requests are excluded, not counted as zero.'
+                    if cost_shares_partial else '')
     html.append('</div><p class="source">Input includes cached reads and writes; total tokens = input + output. '
-                'Token shares require complete, nonzero totals. Cost shares require fully priced, nonzero '
-                'totals without ranges. Different workloads and cache use make this a usage comparison, '
+                'Token shares require complete, nonzero totals. Cost shares require nonzero '
+                f'totals without ranges.{partial_note} Different workloads and cache use make this a usage comparison, '
                 'not a model-efficiency benchmark.</p>')
     if analysis["models"]:
-        chart = ['<p class="comparison-legend"><span>Token share</span><span class="cost-share">Cost share</span></p>',
+        cost_legend = "Cost share of priced spend (partial)" if cost_shares_partial else "Cost share"
+        chart = [f'<p class="comparison-legend"><span>Token share</span><span class="cost-share">{cost_legend}</span></p>',
                  f'<svg class="chart model-chart" viewBox="0 0 900 {len(analysis["models"]) * 48}" role="img" aria-label="Token share and estimated cost share by model">']
         for i, model in enumerate(analysis["models"]):
             y = 6 + i * 48
             summary = model_summaries[model["model"]]
             chart.append(f'<text x="0" y="{y+19}" font-size="12">{e(model["model"])}</text>')
+            model_cost_share = cost_share_of(summary)
             for offset, known, share, color, label in (
                 (0, token_shares_known, model["token_percent"], "teal", "Token"),
-                (18, cost_shares_known,
-                 100 * summary["estimated_usd"] / total["estimated_usd"] if cost_shares_known else 0,
-                 "gold", "Cost"),
+                (18, model_cost_share is not None, model_cost_share or 0, "gold", "Cost"),
             ):
                 if known:
                     chart.append(f'<rect x="200" y="{y+offset}" width="{share*6}" height="12" fill="var(--{color})"><title>{e(model["model"])}: {label.lower()} share {share:.1f}%</title></rect><text x="810" y="{y+offset+11}" font-size="12">{share:.1f}%</text>')
                 else:
-                    chart.append(f'<text x="200" y="{y+offset+11}" font-size="11">{label} share unavailable</text>')
+                    reason = "unpriced" if label == "Cost" and cost_shares_partial else "unavailable"
+                    chart.append(f'<text x="200" y="{y+offset+11}" font-size="11">{label} share {reason}</text>')
         html.extend(chart + ["</svg>"])
     html.append('<details id="model-cost-details"><summary>Cost breakdown by model</summary>'
                 '<p class="source">Each component shows priced token counts / USD. Counts cover priced requests '
