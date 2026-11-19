@@ -630,7 +630,8 @@ class PlayerTests(unittest.TestCase):
                         return {background:style.backgroundColor,color:style.color};
                     }""")
                     self.assertNotEqual(hover["background"], normal["background"])
-                    self.assertEqual(hover["color"], normal["color"])
+                    channels = list(map(int, hover["background"].removeprefix("rgb(").removesuffix(")").split(",")))
+                    self.assertGreater(max(channels) - min(channels), 50)
                     contrast = button.evaluate("""el => {
                         const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
                         const luminance = color => {

@@ -89,8 +89,8 @@ body{background:var(--cp-bg);color:var(--cp-text);font-family:"Segoe UI",Aptos,C
 button:hover,.usage-table-scroll th{background:var(--cp-surface-soft)}
 .transport button,.text-arrows button{background:var(--cp-text);border-color:var(--cp-text);color:var(--cp-surface)}
 .transport button:disabled,.text-arrows button:disabled{background:var(--cp-text);border-color:var(--cp-text);color:var(--cp-surface)}
-.transport button:not(:disabled):hover,.text-arrows button:not(:disabled):hover{background:color-mix(in srgb,var(--cp-text) 80%,var(--cp-surface));border-color:var(--cp-text);color:var(--cp-surface)}
-.transport button:not(:disabled):active,.text-arrows button:not(:disabled):active{background:color-mix(in srgb,var(--cp-text) 65%,var(--cp-surface));border-color:var(--cp-text);color:var(--cp-surface)}
+.transport button:not(:disabled):hover,.text-arrows button:not(:disabled):hover{background:var(--cp-accent);border-color:var(--cp-accent);color:var(--cp-accent-fg)}
+.transport button:not(:disabled):active,.text-arrows button:not(:disabled):active{background:var(--cp-accent-hover);border-color:var(--cp-accent-hover);color:var(--cp-accent-fg)}
 .source-detail summary{color:var(--cp-text-muted)}
 .moment-banner,.moment-item.active{background:color-mix(in srgb,var(--cp-warning) 12%,var(--cp-surface))}
 .human{background:var(--cp-success)}.agent{background:var(--cp-border-strong)}
