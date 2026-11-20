@@ -9,6 +9,8 @@ Cursor exports, and Replit conversation exports.
 [standalone player](https://markrussinovich.github.io/agent-session-insights/player.html),
 or [PDF](https://markrussinovich.github.io/agent-session-insights/report.pdf).
 
+![Wordle session review with a timeline, per-turn token and cost estimates, and evidence-linked user decisions.](assets/wordle-review.png)
+
 ## Install
 
 Use Python 3.12 or later. Install the package and its Chromium renderer in a
