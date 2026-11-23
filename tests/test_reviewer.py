@@ -142,6 +142,69 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(len(events), 6)
         self.assertEqual(events[0]["text"], "Build the report")
 
+    def test_dsh_accounting_preserves_prompt_and_form_response_ownership(self):
+        for bracketed in (False, True):
+            for with_answer in (False, True):
+                with self.subTest(bracketed=bracketed, with_answer=with_answer):
+                    records = self.dsh_records()
+                    if with_answer:
+                        records[-1]["data"]["message"]["content"] = [
+                            {"type": "text", "text": "The report is ready."}]
+                    else:
+                        records = records[:5]
+                    if bracketed:
+                        records.insert(1, {"type": "turn/start", "time": 1794037804256,
+                                           "data": {"turn": 1}})
+                        records.append({"type": "turn/end", "time": 1794037811801,
+                                        "data": {"turn": 1, "reason": "completed"}})
+                    self.dsh_log(records)
+                    manifest = self.root / "manifest.json"
+                    manifest.write_text(json.dumps({
+                        "timezone": "UTC", "sources": [
+                            {"harness": "dsh", "session": "test", "path": "source.jsonl"}],
+                    }), encoding="utf-8")
+                    _, collection, events = collect(
+                        manifest, self.root / f"ownership-{bracketed}-{with_answer}")
+                    analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+                    accounting = analysis["accounting"]
+                    turns = accounting["turns"]
+                    replies = [event for event in events if event["kind"] == "assistant"]
+                    self.assertEqual([turn["calls"] for turn in turns],
+                                     [1, 1] if with_answer else [1])
+                    self.assertEqual([turn["response_ids"] for turn in turns],
+                                     [[reply["id"]] for reply in replies])
+                    self.assertEqual([request["turn"] for request in accounting["requests"]],
+                                     [turn["id"] for turn in turns])
+                    self.assertEqual(accounting["unattributed"]["calls"], 0)
+                    self.assertTrue(all(turn["duration_ms"] is not None for turn in turns))
+
+    def test_dsh_compressed_sessions_reject_incomplete_final_frames(self):
+        import zstandard
+        records = self.dsh_records()
+        compressor = zstandard.ZstdCompressor(write_checksum=True)
+        prefix = compressor.compress(
+            ("\n".join(json.dumps(record) for record in records[:4]) + "\n").encode("utf-8"))
+        final = compressor.compress((json.dumps(records[4]) + "\n").encode("utf-8"))
+        path = self.root / "session.v4.jsonl.zstd"
+        for retained in (1, 4, 10, len(final) - 1):
+            with self.subTest(retained=retained):
+                path.write_bytes(prefix + final[:retained])
+                with self.assertRaisesRegex(ValueError, "incomplete Zstandard frame"):
+                    parse(path, {"harness": "dsh", "session": "test"}, "S01")
+
+    def test_dsh_compressed_sessions_preserve_large_lines_and_unterminated_json(self):
+        import random
+        import zstandard
+        records = self.dsh_records()[:2]
+        text = random.Random(0).randbytes(100000).hex() + "\N{EURO SIGN}"
+        records[1]["data"]["content"] = [{"type": "text", "text": text}]
+        path = self.root / "session.v4.jsonl.zstd"
+        path.write_bytes(zstandard.ZstdCompressor().compress(
+            "\n".join(json.dumps(record, ensure_ascii=False) for record in records).encode("utf-8")))
+        events, _, count = parse(path, {"harness": "dsh", "session": "test"}, "S01")
+        self.assertEqual(count, 2)
+        self.assertEqual(events[0]["text"], text)
+
     def test_dsh_future_or_past_format_versions_fail_explicitly(self):
         records = self.dsh_records()
         records[0]["version"] = 3
