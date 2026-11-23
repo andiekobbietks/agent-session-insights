@@ -490,8 +490,11 @@ def publish(output, collection, events, analysis, public_base_url=None):
                 shown = snapshot["totals"][scope]["spend"]
                 assert spend_matches_total(shown, total), (scope, shown)
                 if total["calls"]:
-                    assert snapshot["totals"][scope]["tokens"] == (
+                    expected_tokens = (
                         f'{input_number(total)} in · {total["output"]:,} out · {total["calls"]:,} calls'
+                    )
+                    assert snapshot["totals"][scope]["tokens"] == expected_tokens, (
+                        scope, snapshot["totals"][scope]["tokens"], expected_tokens
                     )
 
         def filter_snapshots(control, values):
