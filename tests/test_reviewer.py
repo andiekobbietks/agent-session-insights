@@ -496,6 +496,31 @@ class SourceTests(unittest.TestCase):
             self.assertTrue(region.evaluate("(el) => el.clientHeight >= el.scrollHeight"))
             browser.close()
 
+    def test_publication_formats_usage_consistently_in_non_english_locales(self):
+        from playwright.sync_api import Browser
+        collection = {"title": "Locale verification", "timezone": "UTC", "sources": [],
+                      "missing_harnesses": {}, "warnings": []}
+        start = epoch(TIME)
+        common = {"harness": "copilot", "session": "test", "timestamp": TIME}
+        events = [
+            {**common, "id": "H001", "kind": "user", "t": start,
+             "source": "S01:1", "text": "Test input"},
+            {**common, "id": "A001", "identity": "call-1", "kind": "usage", "t": start + 1000,
+             "source": "S01:2", "text": "", "model": "unpriced", "input": 123456,
+             "output": 12345, "cached_read": 0, "cache_write": 0},
+        ]
+        analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+        new_page = Browser.new_page
+        for locale in ("fr-FR", "de-DE"):
+            with self.subTest(locale=locale):
+                output = self.root / locale
+                output.mkdir()
+                with patch.object(Browser, "new_page", autospec=True,
+                                  side_effect=lambda browser, **kwargs: new_page(browser, locale=locale, **kwargs)):
+                    publish(output, collection, events, analysis)
+                verification = json.loads((output / "verification.json").read_text(encoding="utf-8"))
+                self.assertEqual(verification["status"], "passed")
+
     def test_batched_filter_verification_rejects_incorrect_session_usage(self):
         collection = {"title": "Filter verification", "timezone": "UTC", "sources": [],
                       "missing_harnesses": {}, "warnings": []}
