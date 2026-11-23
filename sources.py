@@ -313,17 +313,30 @@ def parse(path, spec, source_id):
                 if usage is not None:
                     if not isinstance(usage, dict):
                         raise ValueError("DSH assistant usage must be an object.")
-                    output = usage["outputTokens"]
-                    cached = usage.get("cacheReadTokens", 0)
-                    written = usage.get("cacheWriteTokens", 0)
-                    fresh = usage.get("inputTokens", 0)
+                    if "inputTokens" not in usage or "outputTokens" not in usage:
+                        raise ValueError("DSH usage must report inputTokens and outputTokens.")
+                    fresh = integer(usage["inputTokens"])
+                    output = integer(usage["outputTokens"])
+                    # Absent cache counters are unknown, not explicit zeros.
+                    cached = usage.get("cacheReadTokens")
+                    written = usage.get("cacheWriteTokens")
+                    cached = integer(cached) if cached is not None else None
+                    written = integer(written) if written is not None else None
                     total = usage.get("totalTokens")
-                    # DSH totalTokens is inclusive of cache reads and fresh input.
-                    inclusive = total - output if total is not None else fresh + cached + written
+                    if total is not None:
+                        total = integer(total)
+                        if total < output:
+                            raise ValueError("DSH totalTokens is smaller than its output tokens.")
+                        # DSH totalTokens is inclusive of cache reads and fresh input.
+                        inclusive = total - output
+                        input_complete = True
+                    else:
+                        inclusive = fresh + (cached or 0) + (written or 0)
+                        input_complete = cached is not None and written is not None
                     if inclusive < fresh:
                         raise ValueError("DSH usage disagrees with its inclusive token totals.")
                     emit("usage", line, time, identity, model=source.get("model") or model or "unknown",
-                         turn_id=data.get("turn"),
+                         turn_id=data.get("turn"), input_complete=input_complete,
                          **tokens(inclusive, output, cached, written))
             elif kind == "tool/call":
                 tool_id = data.get("callId", line)

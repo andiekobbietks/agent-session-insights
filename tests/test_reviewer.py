@@ -88,12 +88,54 @@ class SourceTests(unittest.TestCase):
                          (140, 10, 40))
         self.assertEqual((events[5]["input"], events[5]["output"], events[5]["cached_read"]),
                          (25, 5, 5))
+        self.assertFalse(events[2]["cache_write_known"])
+        self.assertTrue(events[2]["input_complete"])
+        self.assertFalse(events[5]["cache_write_known"])
+        self.assertFalse(events[5]["input_complete"])
         self.assertEqual(events[3]["name"], "ask_user_question")
         self.assertTrue(events[4]["form_response"])
         self.assertIn("Full report", events[4]["text"])
         self.assertNotIn("internal reasoning", json.dumps(events))
         self.assertNotIn("Current runtime context", json.dumps(events))
         self.assertEqual(events[0]["timestamp"], "2026-11-07T07:50:04.257Z")
+
+    def test_dsh_missing_cache_fields_stay_unknown(self):
+        def assistant(identity, usage):
+            return {"type": "assistant/message", "time": 1794037811713,
+                    "data": {"turn": 1, "step": 1, "message": {
+                        "id": identity, "role": "assistant",
+                        "source": {"kind": "model", "model": "deepseek-chat"},
+                        "content": [{"type": "text", "text": identity}]},
+                        "usage": usage}}
+
+        records = [
+            {"type": "session", "version": 4, "id": "session-test", "createdAt": 1,
+             "cwd": "/work/project", "isSeeded": False, "delegationDepth": 0},
+            assistant("missing", {"inputTokens": 100, "outputTokens": 10}),
+            assistant("zero", {"inputTokens": 100, "outputTokens": 10,
+                               "cacheReadTokens": 0, "cacheWriteTokens": 0}),
+            assistant("total-only", {"inputTokens": 100, "outputTokens": 10, "totalTokens": 150}),
+        ]
+        events = self.dsh_log(records)
+        missing, zero, total_only = [event for event in events if event["kind"] == "usage"]
+        self.assertEqual((missing["input"], missing["cached_read"], missing["cache_write"]),
+                         (100, 0, 0))
+        self.assertFalse(missing["cached_read_known"])
+        self.assertFalse(missing["cache_write_known"])
+        self.assertFalse(missing["input_complete"])
+        self.assertTrue(zero["cached_read_known"])
+        self.assertTrue(zero["cache_write_known"])
+        self.assertTrue(zero["input_complete"])
+        self.assertEqual(total_only["input"], 140)
+        self.assertFalse(total_only["cached_read_known"])
+        self.assertFalse(total_only["cache_write_known"])
+        self.assertTrue(total_only["input_complete"])
+
+        for usage in ({"outputTokens": 10}, {"inputTokens": 100},
+                      {"inputTokens": 100, "outputTokens": 10, "totalTokens": 5}):
+            with self.subTest(usage=usage):
+                with self.assertRaises(ValueError):
+                    self.dsh_log([records[0], assistant("bad", usage)])
 
     def test_dsh_compressed_sessions_stream_concatenated_frames(self):
         events = self.dsh_log(self.dsh_records(), compressed=True)

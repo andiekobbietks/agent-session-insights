@@ -73,7 +73,9 @@ overrides honor `COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `DSH_HOME
 DeepSeek Harness sessions are stored as current-format (v4) JSONL, compressed
 with Zstandard by default; the adapter reads either representation and refuses
 older formats explicitly. Only current-generation session logs for the selected
-working directory are read; subagent sessions are excluded.
+working directory are read; subagent sessions are excluded. Missing DSH cache
+counters stay unknown instead of becoming explicit zeros; without `totalTokens`
+they also mark inclusive input incomplete.
 
 ### Select sessions
 
