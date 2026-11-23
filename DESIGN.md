@@ -166,6 +166,9 @@ Official references checked while designing this package:
   sharing is not a guaranteed local JSON export and is not triggered by this tool.
 - [Replit Agent overview](https://docs.replit.com/features/agent/overview.md):
   does not establish a public history export API.
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness):
+  current-format session logs, their project/session directory layout, and
+  Zstandard frame storage.
 
 ## Normalized records and integrity
 
