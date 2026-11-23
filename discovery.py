@@ -97,6 +97,7 @@ def session_metadata(path, harness):
                 "cwd": record.get("cwd"),
                 "started_at": timestamp(record.get("createdAt")),
                 "title": None,
+                "version": record.get("version"),
                 "subagent": record.get("origin") == "subagent",
             }
         if harness == "claude":
@@ -167,6 +168,11 @@ def discover_repository(repository, harness=None, root=None):
                         metadata = session_metadata(path, name)
                         if not metadata:
                             inventory["warnings"].append(f"No repository/session metadata: {path}")
+                            continue
+                        if name == "dsh" and metadata.get("version") != 4:
+                            inventory["warnings"].append(
+                                f"Skipped unsupported DSH session format v{metadata.get('version')}: {path}"
+                            )
                             continue
                         if metadata["subagent"] or not _matches_repository(repository_key, metadata, normalize):
                             continue

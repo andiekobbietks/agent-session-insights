@@ -223,10 +223,17 @@ class DiscoveryTests(unittest.TestCase):
         compressed = path.with_name("session.v4.jsonl.zstd")
         compressed.write_bytes(zstandard.ZstdCompressor().compress(path.read_bytes()))
         path.unlink()
+        old = self.homes["dsh"] / "sessions" / "--project--" / "session-old" / "session.v3.jsonl"
+        old.parent.mkdir(parents=True)
+        old.write_text(json.dumps({
+            "type": "session", "version": 3, "id": "session-old", "createdAt": 1,
+            "cwd": str(self.repo), "isSeeded": False, "delegationDepth": 0,
+        }) + "\n", encoding="utf-8")
         result = discover_repository(self.repo, "dsh")
         self.assertEqual([session["session"] for session in result["sessions"]], ["generation"])
         self.assertEqual(Path(result["sessions"][0]["path"]), compressed.resolve())
-        self.assertEqual(result["warnings"], [])
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertIn("unsupported DSH session format v3", result["warnings"][0])
 
     def test_discovery_normalizes_shared_paths_once_per_scan(self):
         for harness in self.homes:
