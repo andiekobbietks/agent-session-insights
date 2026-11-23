@@ -260,9 +260,9 @@ function spendLabel(total){
   if(lo!==hi)amount=amount?`~${amount} (range ${usd(lo)} - ${usd(hi)})`:`Range ${usd(lo)} - ${usd(hi)}`;
   return amount+(total.unpriced_calls?' + unpriced calls':'');
 }
-function inputLabel(total){return total.input.toLocaleString()+(total.input_complete===false?'+ (incomplete)':'');}
+function inputLabel(total){return total.input.toLocaleString('en-US')+(total.input_complete===false?'+ (incomplete)':'');}
 function tokenLabel(total){
-  return total.calls?`${inputLabel(total)} in · ${total.output.toLocaleString()} out · ${total.calls.toLocaleString()} calls`:'Tokens unavailable · no metered calls recorded';
+  return total.calls?`${inputLabel(total)} in · ${total.output.toLocaleString('en-US')} out · ${total.calls.toLocaleString('en-US')} calls`:'Tokens unavailable · no metered calls recorded';
 }
 function coverageLabel(total){
   return `${total.priced_calls} / ${total.calls} recorded calls priced`+(total.unpriced_calls?' · priced subtotal only':'');
@@ -279,7 +279,7 @@ function renderTurnUsage(){
 }
 function appendModelUsageRow(body,label,scope,total){
   const row=document.createElement('tr');
-  const component=key=>{const part=total.cost_components?.[key];return part?`${part.tokens.toLocaleString()} / $${part.estimated_usd.toFixed(2)}`:'Unknown';};
+  const component=key=>{const part=total.cost_components?.[key];return part?`${part.tokens.toLocaleString('en-US')} / $${part.estimated_usd.toFixed(2)}`:'Unknown';};
   for(const value of [label,scope,total.calls,...['fresh_input','cache_read','cache_write','output'].map(component),spendLabel(total)]){
     const cell=document.createElement('td');cell.textContent=value;row.append(cell);
   }
@@ -308,7 +308,7 @@ function initializeUsage(){
   text('pricing-method',pricing.basis+' '+pricing.method+' '+pricing.verified_on_by_model_note);
   for(const model of A.total.models){
     const rate=pricing.rates[model],row=document.createElement('tr');
-    const rule=rate?.long_context_threshold?`> ${rate.long_context_threshold.toLocaleString()} in: ${rate.long_input_multiplier||1}× input, ${rate.long_output_multiplier||1}× output.`:'No supplied long-context premium.';
+    const rule=rate?.long_context_threshold?`> ${rate.long_context_threshold.toLocaleString('en-US')} in: ${rate.long_input_multiplier||1}× input, ${rate.long_output_multiplier||1}× output.`:'No supplied long-context premium.';
     const values=rate?[`${model} · ${rate.verified_on||pricing.verified_on}`,rate.input,rate.cache_read,rate.cache_write,rate.output,`${rule} Write TTL: ${rate.write_ttl_seconds??'unspecified'} seconds.`]:[model,'Unpriced','—','—','—','No recorded rate'];
     for(const value of values){const td=document.createElement('td');td.textContent=value;row.append(td);}
     $('pricing-rates').append(row);
@@ -324,14 +324,14 @@ function initializeUsage(){
     const detail=document.createElement('details'),summary=document.createElement('summary');
     summary.textContent='Attribution';detail.append(summary,document.createTextNode(Object.entries(turn.attribution).map(([method,count])=>`${count} calls: ${method}`).join(' ')||'No recorded usage.'));
     cell.append(detail);row.append(cell);
-    for(const value of [turn.models.join(', ')||'Unknown',turn.calls,turn.calls?inputLabel(turn):'—',turn.calls?turn.output.toLocaleString():'—',spendLabel(turn)]){
+    for(const value of [turn.models.join(', ')||'Unknown',turn.calls,turn.calls?inputLabel(turn):'—',turn.calls?turn.output.toLocaleString('en-US'):'—',spendLabel(turn)]){
       const td=document.createElement('td');td.textContent=value;row.append(td);
     }
     body.append(row);
   }
   if(A.unattributed.calls){
     const total=A.unattributed,row=document.createElement('tr');
-    for(const value of ['Unattributed',total.models.join(', '),total.calls,inputLabel(total),total.output.toLocaleString(),spendLabel(total)]){
+    for(const value of ['Unattributed',total.models.join(', '),total.calls,inputLabel(total),total.output.toLocaleString('en-US'),spendLabel(total)]){
       const cell=document.createElement('td');cell.textContent=value;row.append(cell);
     }
     body.append(row);
