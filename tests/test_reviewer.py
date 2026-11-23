@@ -30,6 +30,82 @@ class SourceTests(unittest.TestCase):
         )
         return parse(path, {"harness": harness, "session": "test"}, "S01")[0]
 
+
+    def dsh_log(self, records, compressed=False):
+        if not compressed:
+            return self.load("dsh", records)
+        import zstandard
+        path = self.root / "session.v4.jsonl.zstd"
+        compressor = zstandard.ZstdCompressor()
+        path.write_bytes(b"".join(
+            compressor.compress(json.dumps(record).encode("utf-8") + b"\n") for record in records
+        ))
+        return parse(path, {"harness": "dsh", "session": "test"}, "S01")[0]
+
+    def dsh_records(self):
+        answers = json.dumps({"answers": [{"id": "scope", "selected": ["Full report"]}]})
+        return [
+            {"type": "session", "version": 4, "id": "session-test", "createdAt": 1794037718022,
+             "cwd": "/work/project", "isSeeded": False, "delegationDepth": 0},
+            {"type": "user/message", "seq": 0, "time": 1794037804257,
+             "data": {"id": "u1", "source": {"kind": "user"},
+                      "content": [{"type": "text", "text": "Build the report"}]}},
+            {"type": "user/message", "seq": 1, "time": 1794037804258,
+             "data": {"id": "ctx", "source": {"kind": "runtime-context"},
+                      "content": [{"type": "text", "text": "Current runtime context"}]}},
+            {"type": "request/context", "seq": 2, "time": 1794037804259,
+             "data": {"provider": "deepseek", "model": "deepseek-chat", "contextWindow": 1000000}},
+            {"type": "assistant/message", "seq": 3, "time": 1794037811713,
+             "data": {"turn": 1, "step": 1, "message": {
+                 "id": "a1", "role": "assistant",
+                 "source": {"kind": "model", "provider": "deepseek", "model": "deepseek-chat"},
+                 "content": [{"type": "reasoning", "text": "internal reasoning"},
+                             {"type": "text", "text": "Checking the repository."}]},
+                 "usage": {"inputTokens": 100, "outputTokens": 10, "totalTokens": 150,
+                           "cacheReadTokens": 40}}},
+            {"type": "tool/call", "seq": 4, "time": 1794037811716,
+             "data": {"turn": 1, "step": 1, "callId": "call_ask", "name": "ask_user_question"}},
+            {"type": "tool/result", "seq": 5, "time": 1794037811720,
+             "data": {"turn": 1, "step": 1, "toolCallId": "call_ask",
+                      "message": {"role": "tool", "toolCallId": "call_ask", "isError": False,
+                                  "content": [{"type": "text", "text": answers}]}}},
+            {"type": "assistant/message", "seq": 6, "time": 1794037811800,
+             "data": {"turn": 1, "step": 2, "message": {
+                 "id": "a2", "role": "assistant",
+                 "source": {"kind": "model", "provider": "deepseek", "model": "deepseek-chat"},
+                 "content": [{"type": "reasoning", "text": "one more step"}]},
+                 "usage": {"inputTokens": 20, "outputTokens": 5, "cacheReadTokens": 5}}},
+        ]
+
+    def test_dsh_messages_usage_tools_and_human_answers(self):
+        events = self.dsh_log(self.dsh_records())
+        self.assertEqual([event["kind"] for event in events],
+                         ["user", "assistant", "usage", "tool", "user", "usage"])
+        self.assertEqual(events[0]["text"], "Build the report")
+        self.assertEqual(events[1]["text"], "Checking the repository.")
+        self.assertEqual(events[2]["model"], "deepseek-chat")
+        self.assertEqual((events[2]["input"], events[2]["output"], events[2]["cached_read"]),
+                         (140, 10, 40))
+        self.assertEqual((events[5]["input"], events[5]["output"], events[5]["cached_read"]),
+                         (25, 5, 5))
+        self.assertEqual(events[3]["name"], "ask_user_question")
+        self.assertTrue(events[4]["form_response"])
+        self.assertIn("Full report", events[4]["text"])
+        self.assertNotIn("internal reasoning", json.dumps(events))
+        self.assertNotIn("Current runtime context", json.dumps(events))
+        self.assertEqual(events[0]["timestamp"], "2026-11-07T07:50:04.257Z")
+
+    def test_dsh_compressed_sessions_stream_concatenated_frames(self):
+        events = self.dsh_log(self.dsh_records(), compressed=True)
+        self.assertEqual(len(events), 6)
+        self.assertEqual(events[0]["text"], "Build the report")
+
+    def test_dsh_future_or_past_format_versions_fail_explicitly(self):
+        records = self.dsh_records()
+        records[0]["version"] = 3
+        with self.assertRaisesRegex(ValueError, "session format v3 is unsupported"):
+            self.dsh_log(records)
+
     def test_shared_conversation_urls_are_redacted_without_removing_the_prompt(self):
         for host in ("claude.ai", "chatgpt.com", "chat.openai.com"):
             text = f"Use [this session](https://{host}/share/example-session?view=1), not https://example.org/docs."

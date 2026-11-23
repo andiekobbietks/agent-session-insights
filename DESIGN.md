@@ -38,12 +38,13 @@ Full normalized events, accounting and private snapshots remain in the report.
 A repository-path request authorizes metadata matching in the current user's
 standard native history stores, not whole-home scans or collection of unrelated
 conversation bodies. `review.py discover --repo PATH` inspects Copilot
-`session.start` context, Claude `cwd`/`sessionId` records, and Codex `session_meta`.
+`session.start` context, Claude `cwd`/`sessionId` records, Codex `session_meta`,
+and the DeepSeek Harness session header.
 It stops once that session metadata is found, retains no message bodies in the
 inventory, and does not infer a title from a prompt. Native metadata titles are
 optional. Alternative roots require an explicit harness and history directory.
-Default stores honor `COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, and `CODEX_HOME`; Codex
-includes its archived-sessions directory.
+Default stores honor `COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and
+`DSH_HOME`; Codex includes its archived-sessions directory.
 
 An absolute recorded Git root must match the requested directory exactly.
 Otherwise the absolute recorded working directory must equal or descend from
@@ -97,8 +98,11 @@ and uses an Edit permission rule to pre-approve file creation/edits only for the
 generated annotations path. Other
 permission requests are denied, not presented interactively. Codex uses
 `exec --skip-git-repo-check --sandbox workspace-write` in the generated non-Git
-workspace. Windows launches add `--enable prefer_mxc` to prefer supported MXC
-isolation without changing saved settings; permitted configured legacy sandbox
+workspace. DeepSeek Harness uses `dsh headless --permission-mode workspace-write
+--approval-policy never`, so file writes stay inside the generated workspace and
+any approval request is denied rather than presented interactively. Windows
+launches add `--enable prefer_mxc` to prefer supported MXC isolation without
+changing saved settings; permitted configured legacy sandbox
 selection remains the fallback. No sandbox bypass or full-access flag is used.
 All harnesses exit automatically; terminal progress is not an interactive UI.
 A temporary JSON launch request identifies the `"annotate"` phase, frozen
@@ -123,6 +127,7 @@ exports and still requires an explicitly selected manifest.
 | Copilot CLI | Selected `$COPILOT_HOME/session-state/<id>/events.jsonl` (default `~/.copilot`) | Human `user.message` without synthetic `source`, `assistant.message`, `session.usage_record`, tool-call names. Event/request IDs deduplicate rewritten copies. SQL-only/auxiliary recovery is not inferred; coverage warns that the event log may be incomplete. |
 | Claude Code | Selected `~/.claude/projects/<project>/<id>.jsonl` | Human-origin messages and human queued-command attachments, assistant text, request usage. Repeated assistant blocks use maximum per-request usage, not a sum. Compaction summaries, tool results, system notices, and subagent handbacks are not user prompts. |
 | Codex | Selected `~/.codex/sessions/.../rollout-*.jsonl` | Canonical `response_item` messages and per-response `token_usage_record`. Duplicate `UserMessage`/`AgentMessage` mirrors and cumulative `token_count` are ignored. Model identity comes from `turn_context`, not an inferred product default. |
+| DeepSeek Harness | Selected `$DSH_HOME/sessions/<project>/<id>/session.v4.jsonl[.zstd]` (default `~/.dsh`) | Current-format (v4) session header, human `user/message` events and scheduled user prompts, assistant text blocks, per-message `usage` with inclusive `totalTokens`, and tool-call names. Injected user-role context, reasoning blocks, tool payloads, and subagent histories are excluded. Human `ask_user_question` answers are retained as form responses. The adapter refuses older session formats explicitly and needs the `zstandard` dependency for compressed logs. |
 | Cursor | User-provided Markdown or JSON conversation export | Markdown role headings `**User**`, `**Cursor**`, `## User`, `## Assistant` (outside code fences). JSON contract below. Exported Markdown is undated unless explicitly converted with known timestamps. No undocumented live `state.vscdb` writes, credential extraction, or automatic public sharing. |
 | Replit | User-provided conversation export/copied transcript converted to the JSON/Markdown contract below | No claim that a project ZIP or application console log contains Agent chat. No assumed public conversation-export API. If chat cannot be exported, request a complete copy with roles and label missing timing/usage. |
 

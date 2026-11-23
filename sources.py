@@ -1,10 +1,12 @@
 """Explicit, read-only adapters for coding-agent histories and portable exports."""
+import io
 import json
 import re
 from datetime import datetime, timezone
 
 HARNESSES = {"copilot": "GitHub Copilot", "claude": "Claude Code", "codex": "Codex",
-             "cursor": "Cursor", "replit": "Replit"}
+             "dsh": "DeepSeek Harness", "cursor": "Cursor", "replit": "Replit"}
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 SECRET = re.compile(
     r"(?:sk-or-v1-|github_pat_|ghp_|gho_|hf_|sk-)[A-Za-z0-9_-]{15,}"
     r"|(?i:Bearer\s+)[A-Za-z0-9._~+/-]{16,}"
@@ -70,6 +72,9 @@ def tokens(input_tokens, output_tokens, cached=None, written=None):
 
 
 def jsonl(path):
+    if is_zstd(path):
+        yield from compressed_jsonl(path)
+        return
     with path.open(encoding="utf-8") as stream:
         for line, value in enumerate(stream, 1):
             if not value.strip():
@@ -81,6 +86,43 @@ def jsonl(path):
             if not isinstance(record, dict):
                 raise ValueError(f"{path.name}:{line}: expected a JSON object")
             yield line, record
+
+
+def is_zstd(path):
+    try:
+        with path.open("rb") as stream:
+            return stream.read(len(ZSTD_MAGIC)) == ZSTD_MAGIC
+    except OSError:
+        return False
+
+
+def compressed_jsonl(path):
+    """Stream concatenated Zstandard frames without assuming one frame per file."""
+    try:
+        import zstandard
+    except ImportError as error:
+        raise ValueError(
+            f"{path.name}: compressed DSH session logs need the zstandard package; "
+            "install agent-session-insights with its declared dependencies."
+        ) from error
+    try:
+        with path.open("rb") as raw:
+            reader = zstandard.ZstdDecompressor().stream_reader(raw, read_across_frames=True)
+            with reader, io.TextIOWrapper(reader, encoding="utf-8") as stream:
+                for line, value in enumerate(stream, 1):
+                    if not value.strip():
+                        continue
+                    try:
+                        record = json.loads(value)
+                    except json.JSONDecodeError as error:
+                        raise ValueError(f"{path.name}:{line}: malformed JSON") from error
+                    if not isinstance(record, dict):
+                        raise ValueError(f"{path.name}:{line}: expected a JSON object")
+                    yield line, record
+    except zstandard.ZstdError as error:
+        raise ValueError(
+            f"{path.name}: malformed or unsupported Zstandard session log ({error})"
+        ) from error
 
 
 def parse(path, spec, source_id):
@@ -147,6 +189,7 @@ def parse(path, spec, source_id):
 
     model, raw_count, boundary = "unknown", 0, None
     request_turns = {}
+    tool_names = {}
     for line, record in jsonl(path):
         raw_count += 1
         kind, time = record.get("type"), record.get("timestamp")
@@ -244,6 +287,62 @@ def parse(path, spec, source_id):
                 ):
                     message("user", line, time, attachment.get("source_uuid") or identity,
                             attachment.get("prompt"))
+        elif harness == "dsh":
+            time = record.get("time")
+            data = record.get("data") or {}
+            if kind == "session":
+                if record.get("version") != 4:
+                    raise ValueError(
+                        f"{path.name}: DSH session format v{record.get('version')} is unsupported; "
+                        "export it from a current DeepSeek Harness version (session format v4)."
+                    )
+            elif kind == "request/context":
+                model = data.get("model") or model
+            elif kind == "user/message":
+                source = data.get("source") or {}
+                if source.get("kind") in ("user", "schedule"):
+                    message("user", line, time, data.get("id", line), data.get("content"))
+            elif kind == "assistant/message":
+                payload = data.get("message") or {}
+                identity = payload.get("id", line)
+                source = payload.get("source") or {}
+                model = source.get("model") or model
+                message("assistant", line, time, identity, payload.get("content"),
+                        request_id=identity, turn_id=data.get("turn"))
+                usage = data.get("usage")
+                if usage is not None:
+                    if not isinstance(usage, dict):
+                        raise ValueError("DSH assistant usage must be an object.")
+                    output = usage["outputTokens"]
+                    cached = usage.get("cacheReadTokens", 0)
+                    written = usage.get("cacheWriteTokens", 0)
+                    fresh = usage.get("inputTokens", 0)
+                    total = usage.get("totalTokens")
+                    # DSH totalTokens is inclusive of cache reads and fresh input.
+                    inclusive = total - output if total is not None else fresh + cached + written
+                    if inclusive < fresh:
+                        raise ValueError("DSH usage disagrees with its inclusive token totals.")
+                    emit("usage", line, time, identity, model=source.get("model") or model or "unknown",
+                         turn_id=data.get("turn"),
+                         **tokens(inclusive, output, cached, written))
+            elif kind == "tool/call":
+                tool_id = data.get("callId", line)
+                tool_names[tool_id] = data.get("name") or "unknown"
+                emit("tool", line, time, tool_id, name=tool_names[tool_id],
+                     turn_id=data.get("turn"))
+            elif kind == "tool/result":
+                payload = data.get("message") or {}
+                tool_id = payload.get("toolCallId") or data.get("toolCallId")
+                if tool_names.get(tool_id) == "ask_user_question" and not payload.get("isError"):
+                    body = textof(payload.get("content"))
+                    try:
+                        answers = json.loads(body).get("answers")
+                    except (json.JSONDecodeError, AttributeError):
+                        answers = None
+                    if isinstance(answers, list) and answers:
+                        message("user", line, time, tool_id or line,
+                                json.dumps({"answers": answers}, ensure_ascii=False, indent=2),
+                                form_response=True, turn_id=data.get("turn"))
         else:
             raise ValueError(f"Unsupported harness: {harness}")
     if harness == "copilot":

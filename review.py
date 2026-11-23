@@ -48,6 +48,11 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def source_suffix(path):
+    """Keep compound source suffixes such as .v4.jsonl.zstd on frozen copies."""
+    return "".join(path.suffixes) or ".jsonl"
+
+
 def is_junction(path):
     mount_point_tag = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", None)
     return mount_point_tag is not None and getattr(path.lstat(), "st_reparse_tag", None) == mount_point_tag
@@ -162,7 +167,7 @@ def collect(manifest_path, output):
         after = original.stat()
         if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
             raise ValueError(f"Source changed while being copied: {original}; retry with a frozen copy.")
-        snapshot = snapshots / f"{source_id}{original.suffix}"
+        snapshot = snapshots / f"{source_id}{source_suffix(original)}"
         snapshot.write_bytes(data)
         snapshot.chmod(0o600)
         digest = hashlib.sha256(data).hexdigest()
@@ -171,7 +176,8 @@ def collect(manifest_path, output):
             raise ValueError("Source start must not follow end.")
         parse_spec = {**spec, "subagent": spec.get("subagent", False) or "subagents" in original.parts}
         parsed, warnings, raw_count = parse(snapshot, parse_spec, source_id)
-        metadata = session_metadata(snapshot, spec["harness"]) if spec["harness"] in ("copilot", "claude", "codex") else None
+        metadata = (session_metadata(snapshot, spec["harness"])
+                    if spec["harness"] in ("copilot", "claude", "codex", "dsh") else None)
         started_at = (metadata or {}).get("started_at")
         started_at_basis = "Session metadata"
         if not started_at:
@@ -213,6 +219,11 @@ def collect(manifest_path, output):
             warnings.append(f"{undated} events lack reliable timestamps and remain outside the clock.")
         if spec["harness"] == "copilot":
             warnings.append("Event-log-only import: SQL-only and unrecorded auxiliary requests are not reconstructed.")
+        elif spec["harness"] == "dsh":
+            warnings.append(
+                "DSH reasoning blocks, tool payloads and injected user-role context are excluded; "
+                "assistant usage is counted per recorded message."
+            )
         collection["sources"].append({
             "id": source_id, "harness": spec["harness"], "session": spec["session"],
             "original_path": str(original), "snapshot": str(snapshot.relative_to(output)),
@@ -371,8 +382,8 @@ def analyze(collection, events, interpretation):
 
 def discover(harness, root):
     patterns = {"copilot": ("**/events.jsonl",), "claude": ("**/*.jsonl",),
-                "codex": ("**/rollout-*.jsonl",), "cursor": ("**/*.md", "**/*.json"),
-                "replit": ("**/*.md", "**/*.json")}
+                "codex": ("**/rollout-*.jsonl",), "dsh": ("**/session*.jsonl*",),
+                "cursor": ("**/*.md", "**/*.json"), "replit": ("**/*.md", "**/*.json")}
     if not root.is_dir():
         raise ValueError("Discovery root must be an explicitly approved directory.")
     found = sorted({p for pattern in patterns[harness] for p in root.glob(pattern) if p.is_file()})
@@ -525,6 +536,11 @@ def launch_report_agent(harness, manifest, output):
                 "--deny-tool", "shell",
                 "--trust-folder", "--prompt", prompt,
             ])
+        elif harness == "dsh":
+            command.extend([
+                "headless", "--permission-mode", "workspace-write",
+                "--approval-policy", "never", prompt,
+            ])
         elif harness == "claude":
             annotation = "./" + annotations_path.relative_to(workspace).as_posix()
             command.extend([
@@ -626,7 +642,7 @@ def archive_session_logs(output, selected, inventory, timezone):
                     after = original.stat()
                     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
                         raise ValueError(f"Source changed while being copied: {original}; retry with a frozen copy.")
-                    snapshot = f"logs/S{index:02d}{original.suffix}"
+                    snapshot = f"logs/S{index:02d}{source_suffix(original)}"
                     archive.writestr(snapshot, data)
                     manifest["sources"].append({
                         "harness": session["harness"], "session": session["session"],
