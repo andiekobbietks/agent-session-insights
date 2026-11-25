@@ -714,6 +714,9 @@ def report_repository(args):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(
         description=(
             "Create evidence-linked coding-agent session reports: report.html, report.pdf, "

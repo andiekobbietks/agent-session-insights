@@ -805,6 +805,29 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result.stdout, "  first message  \nsecond message\nwarning\nlast message")
         self.assertEqual(output.getvalue(), "  first message  \nsecond message\nwarning\nlast message\n")
 
+    def test_cli_streams_unicode_harness_output_with_legacy_console_encoding(self):
+        message = "\u25cf Reviewing caf\u00e9 \u2713"
+        child = f"import sys; sys.stdout.buffer.write({(message + chr(10)).encode('utf-8')!r})"
+        script = (
+            "import sys\n"
+            "from unittest.mock import patch\n"
+            "import review\n"
+            "def report(args):\n"
+            f"    result = review.run_report_harness([sys.executable, '-c', {child!r}], cwd=args.repo)\n"
+            "    assert result.returncode == 0\n"
+            f"    print({message!r}, file=sys.stderr)\n"
+            "with patch('review.check_report_dependencies'), patch('review.report_repository', side_effect=report):\n"
+            "    review.main()\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script, "repo", "--repo", str(self.repo)],
+            cwd=REVIEW.parent, capture_output=True, encoding="utf-8", timeout=30,
+            env={**os.environ, "PYTHONIOENCODING": "cp1252:strict", "PYTHONUTF8": "0"},
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, message + "\n")
+        self.assertEqual(result.stderr, message + "\n")
+
     def test_default_launches_each_harness_with_selected_sources_and_reviewer_prompt(self):
         pricing = self.root / "agent-rates.json"
         write_json(pricing, {
