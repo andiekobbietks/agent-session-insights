@@ -1,4 +1,5 @@
 import contextlib
+from datetime import datetime
 import hashlib
 import io
 import json
@@ -27,11 +28,12 @@ class DiscoveryTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.repo = self.root / "project"
         self.repo.mkdir()
-        self.homes = {name: self.root / name for name in ("copilot", "claude", "codex")}
+        self.homes = {name: self.root / name for name in ("copilot", "claude", "codex", "dsh")}
         self.env = {
             "COPILOT_HOME": str(self.homes["copilot"]),
             "CLAUDE_CONFIG_DIR": str(self.homes["claude"]),
             "CODEX_HOME": str(self.homes["codex"]),
+            "DSH_HOME": str(self.homes["dsh"]),
         }
         self.environment = patch.dict(os.environ, self.env)
         self.environment.start()
@@ -84,6 +86,21 @@ class DiscoveryTests(unittest.TestCase):
             records = [metadata, {"type": "response_item", "timestamp": time, "payload": {
                 "id": "u1", "type": "message", "role": "user",
                 "content": [{"type": "input_text", "text": "Build the feature"}]}}]
+        elif harness == "dsh":
+            path = (self.homes[harness] / "sessions" / "--project--" / session
+                    / "session.v4.jsonl")
+            created = round(datetime.fromisoformat(time.replace("Z", "+00:00")).timestamp() * 1000)
+            metadata = {
+                "type": "session", "version": 4, "id": session, "createdAt": created,
+                "cwd": cwd, "isSeeded": False, "delegationDepth": 1 if subagent else 0,
+            }
+            if subagent:
+                metadata.update(origin="subagent", parentSession="parent")
+            records = [metadata, {
+                "type": "user/message", "seq": 0, "time": created,
+                "data": {"id": "u1", "source": {"kind": "user"},
+                         "content": [{"type": "text", "text": "Build the feature"}]},
+            }]
         else:
             path = self.homes[harness] / "projects" / "encoded-project" / f"{session}.jsonl"
             metadata = {
@@ -195,13 +212,36 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(all(s["title"] is None for s in result["sessions"]))
         self.assertNotIn("Build the feature", json.dumps(result))
 
+    def test_dsh_discovery_selects_current_generation_and_reads_compressed_headers(self):
+        import zstandard
+        path = self.source("dsh", "generation")
+        v3 = path.with_name("session.v3.jsonl")
+        v3.write_text(json.dumps({
+            "type": "session", "version": 3, "id": "generation", "createdAt": 1,
+            "cwd": str(self.repo), "isSeeded": False, "delegationDepth": 0,
+        }) + "\n", encoding="utf-8")
+        compressed = path.with_name("session.v4.jsonl.zstd")
+        compressed.write_bytes(zstandard.ZstdCompressor().compress(path.read_bytes()))
+        path.unlink()
+        old = self.homes["dsh"] / "sessions" / "--project--" / "session-old" / "session.v3.jsonl"
+        old.parent.mkdir(parents=True)
+        old.write_text(json.dumps({
+            "type": "session", "version": 3, "id": "session-old", "createdAt": 1,
+            "cwd": str(self.repo), "isSeeded": False, "delegationDepth": 0,
+        }) + "\n", encoding="utf-8")
+        result = discover_repository(self.repo, "dsh")
+        self.assertEqual([session["session"] for session in result["sessions"]], ["generation"])
+        self.assertEqual(Path(result["sessions"][0]["path"]), compressed.resolve())
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertIn("unsupported DSH session format v3", result["warnings"][0])
+
     def test_discovery_normalizes_shared_paths_once_per_scan(self):
         for harness in self.homes:
             for i in range(10):
                 self.source(harness, f"session-{i}")
         with patch("discovery.path_key", wraps=path_key) as normalize:
             first = discover_repository(self.repo)
-            self.assertEqual(len(first["sessions"]), 30)
+            self.assertEqual(len(first["sessions"]), 40)
             self.assertEqual(normalize.call_count, 1)
             second = discover_repository(self.repo)
             self.assertEqual(second, first)
@@ -414,6 +454,27 @@ class DiscoveryTests(unittest.TestCase):
                 collection = json.loads((prepared / "collection.json").read_text())
                 self.assertEqual([s["session"] for s in collection["sources"]], expected)
                 self.assertEqual(collection["timezone"], "UTC")
+
+    def test_dsh_logs_only_keeps_compressed_manifest_paths(self):
+        import zstandard
+        path = self.source("dsh", "compressed")
+        compressed = path.with_name("session.v4.jsonl.zstd")
+        compressed.write_bytes(zstandard.ZstdCompressor().compress(path.read_bytes()))
+        path.unlink()
+        output = self.root / "dsh-logs"
+        self.command("repo", "--repo", self.repo, "--harness", "dsh", "--logs-only",
+                     "--output", output)
+        extracted = self.root / "dsh-extracted"
+        with ZipFile(output / "session-logs.zip") as archive:
+            self.assertIsNone(archive.testzip())
+            spec, = json.loads(archive.read("manifest.json"))["sources"]
+            self.assertTrue(spec["path"].endswith(".v4.jsonl.zstd"), spec["path"])
+            archive.extractall(extracted)
+        prepared = self.root / "dsh-prepared"
+        self.command("prepare", "--manifest", extracted / "manifest.json", "--output", prepared)
+        collection = json.loads((prepared / "collection.json").read_text())
+        self.assertEqual([source["harness"] for source in collection["sources"]], ["dsh"])
+        self.assertEqual(collection["sources"][0]["counts"]["user"], 1)
 
     def test_logs_only_default_destination_and_privacy_warning(self):
         self.source("codex", "selected")
@@ -778,6 +839,12 @@ class DiscoveryTests(unittest.TestCase):
                     self.assertTrue(rule.endswith("annotations.json)"))
                     self.assertNotIn("--allow-all-tools", command)
                     self.assertNotIn("--allow-all", command)
+                elif harness == "dsh":
+                    self.assertEqual(command[1:5], ["headless", "--permission-mode",
+                                                    "workspace-write", "--approval-policy"])
+                    self.assertEqual(command[5], "never")
+                    self.assertEqual(command[6], command[-1])
+                    self.assertIn("annotation-only task", command[-1])
                 elif harness == "claude":
                     self.assertEqual(command[1:4], ["--print", "--permission-mode", "dontAsk"])
                     self.assertEqual(command[-2], "--")
@@ -996,6 +1063,11 @@ class DiscoveryTests(unittest.TestCase):
                     elif harness == "claude":
                         self.assertEqual(command[1], "--print")
                         self.assertNotIn("--dangerously-skip-permissions", command)
+                    elif harness == "dsh":
+                        self.assertEqual(command[1], "headless")
+                        self.assertEqual(command[command.index("--permission-mode") + 1],
+                                         "workspace-write")
+                        self.assertEqual(command[command.index("--approval-policy") + 1], "never")
                     else:
                         self.assertEqual(command[1], "exec")
                     self.complete_agent_request(command, cwd)

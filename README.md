@@ -3,7 +3,7 @@
 Create offline reports from coding-agent conversations: complete messages,
 evidence-linked analysis, per-model token and cost comparisons, and a zoomable
 timeline with local day/night shading. Supports Copilot CLI, Claude Code, Codex,
-Cursor exports, and Replit conversation exports.
+DeepSeek Harness, Cursor exports, and Replit conversation exports.
 
 **See the example:** [HTML report](https://markrussinovich.github.io/agent-session-insights/),
 [standalone player](https://markrussinovich.github.io/agent-session-insights/player.html),
@@ -55,18 +55,27 @@ agent-session-insights repo --repo C:\Source\my-project
 This selects the **newest matching session**, freezes its logs, launches its
 native harness headlessly for reviewed annotations, then generates and verifies
 the report. The harness CLI must be on `PATH` and signed in; normal model charges
-apply. Only the selected evidence is reviewed. Use `--noagent` for measured
+apply. For DeepSeek Harness sessions this runs `dsh headless` with a
+`workspace-write` permission preset, so the `dsh` CLI and a working model route
+must be available; headless credentials follow that profile's configuration.
+Only the selected evidence is reviewed. Use `--noagent` for measured
 accounting and replay without qualitative annotations or model calls.
 
-Automatic discovery supports Copilot, Claude, and Codex. It matches recorded
-repository/working-directory metadata in the current user's native history
-stores, not project mentions in messages, and excludes native subagents.
-Missing or malformed metadata limits discovery; Cursor/Replit require
+Automatic discovery supports Copilot, Claude, Codex, and DeepSeek Harness. It
+matches recorded repository/working-directory metadata in the current user's
+native history stores, not project mentions in messages, and excludes native
+subagents. Missing or malformed metadata limits discovery; Cursor/Replit require
 [explicit exports](#explicit-exports-and-manifests).
 
 Native stores under your home are `.copilot\session-state`, `.claude\projects`,
-`.codex\sessions`, and `.codex\archived_sessions`. Home-directory overrides honor
-`COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, and `CODEX_HOME`.
+`.codex\sessions`, `.codex\archived_sessions`, and `.dsh\sessions`. Home-directory
+overrides honor `COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `DSH_HOME`.
+DeepSeek Harness sessions are stored as current-format (v4) JSONL, compressed
+with Zstandard by default; the adapter reads either representation and refuses
+older formats explicitly. Only current-generation session logs for the selected
+working directory are read; subagent sessions are excluded. Missing DSH cache
+counters stay unknown instead of becoming explicit zeros; without `totalTokens`
+they also mark inclusive input incomplete.
 
 ### Select sessions
 
@@ -87,7 +96,7 @@ reviewer for those histories.
 | `--repo PATH` | Required local repository directory. |
 | `--session ID` | Select an ID or `harness:ID`; repeat for multiple sessions. |
 | `--all` | Combine all matches; mutually exclusive with `--session`. |
-| `--harness NAME` | Search only `copilot`, `claude`, or `codex`. |
+| `--harness NAME` | Search only `copilot`, `claude`, `codex`, or `dsh`. |
 | `--root PATH` | Override the native history directory; requires `--harness`. |
 | `--output PATH` | Override the report destination. |
 | `--noagent` | Skip the harness and qualitative annotations. |
@@ -213,7 +222,7 @@ exports. Paths are relative to the manifest:
 ```
 
 Each source needs `harness`, `path`, and `session`. Supported harness identifiers
-are `copilot`, `claude`, `codex`, `cursor`, and `replit`. Optional source `start`
+are `copilot`, `claude`, `codex`, `dsh`, `cursor`, and `replit`. Optional source `start`
 and `end` values are inclusive, timezone-aware ISO timestamps. Optional
 `annotations` and `pricing` paths provide reviewed interpretation and a custom
 rate card. Without supplied annotations, `run` labels qualitative interpretation

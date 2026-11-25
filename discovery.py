@@ -3,13 +3,15 @@ import ntpath
 import os
 from pathlib import Path
 import posixpath
+import re
 
 if __package__:
     from .sources import jsonl, redact, timestamp
 else:
     from sources import jsonl, redact, timestamp
 
-NATIVE_HARNESSES = ("copilot", "claude", "codex")
+NATIVE_HARNESSES = ("copilot", "claude", "codex", "dsh")
+DSH_GENERATION = re.compile(r"^session(?:\.v(\d+))?\.jsonl(\.zstd)?$")
 
 
 def history_roots():
@@ -17,10 +19,12 @@ def history_roots():
     copilot = Path(os.environ.get("COPILOT_HOME") or home / ".copilot").expanduser()
     claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser()
     codex = Path(os.environ.get("CODEX_HOME") or home / ".codex").expanduser()
+    dsh = Path(os.environ.get("DSH_HOME") or home / ".dsh").expanduser()
     return {
         "copilot": (copilot / "session-state",),
         "claude": (claude / "projects",),
         "codex": (codex / "sessions", codex / "archived_sessions"),
+        "dsh": (dsh / "sessions",),
     }
 
 
@@ -85,6 +89,17 @@ def session_metadata(path, harness):
                              or source == "subagent"
                              or isinstance(source, dict) and "subagent" in source),
             }
+        if harness == "dsh":
+            if kind != "session":
+                continue
+            return {
+                "session": record.get("id"),
+                "cwd": record.get("cwd"),
+                "started_at": timestamp(record.get("createdAt")),
+                "title": None,
+                "version": record.get("version"),
+                "subagent": record.get("origin") == "subagent",
+            }
         if harness == "claude":
             if kind in ("summary", "custom-title"):
                 title = record.get("customTitle") or record.get("summary") or title
@@ -124,7 +139,8 @@ def discover_repository(repository, harness=None, root=None):
 
     repository_key = normalize(str(repository))
     inventory = {"repository": str(repository), "sessions": [], "warnings": [], "unavailable": {}}
-    patterns = {"copilot": "*/events.jsonl", "claude": "**/*.jsonl", "codex": "**/rollout-*.jsonl"}
+    patterns = {"copilot": "*/events.jsonl", "claude": "**/*.jsonl",
+                "codex": "**/rollout-*.jsonl", "dsh": "**/session*.jsonl*"}
     for name in (harness,) if harness else NATIVE_HARNESSES:
         available = False
         for directory in roots[name]:
@@ -133,6 +149,18 @@ def discover_repository(repository, harness=None, root=None):
             available = True
             try:
                 paths = sorted(directory.glob(patterns[name]))
+                if name == "dsh":
+                    # Retained historical generations share one session directory;
+                    # only the canonical highest generation may represent it.
+                    latest = {}
+                    for path in paths:
+                        match = DSH_GENERATION.match(path.name)
+                        if match:
+                            rank = (int(match.group(1) or 0), bool(match.group(2)))
+                            prior = latest.get(path.parent)
+                            if prior is None or rank > prior[0]:
+                                latest[path.parent] = (rank, path)
+                    paths = sorted(entry[1] for entry in latest.values())
                 for path in paths:
                     if not path.is_file() or path.is_symlink() or "subagents" in path.relative_to(directory).parts:
                         continue
@@ -140,6 +168,11 @@ def discover_repository(repository, harness=None, root=None):
                         metadata = session_metadata(path, name)
                         if not metadata:
                             inventory["warnings"].append(f"No repository/session metadata: {path}")
+                            continue
+                        if name == "dsh" and metadata.get("version") != 4:
+                            inventory["warnings"].append(
+                                f"Skipped unsupported DSH session format v{metadata.get('version')}: {path}"
+                            )
                             continue
                         if metadata["subagent"] or not _matches_repository(repository_key, metadata, normalize):
                             continue

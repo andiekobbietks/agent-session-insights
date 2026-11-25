@@ -30,6 +30,187 @@ class SourceTests(unittest.TestCase):
         )
         return parse(path, {"harness": harness, "session": "test"}, "S01")[0]
 
+
+    def dsh_log(self, records, compressed=False):
+        if not compressed:
+            return self.load("dsh", records)
+        import zstandard
+        path = self.root / "session.v4.jsonl.zstd"
+        compressor = zstandard.ZstdCompressor()
+        path.write_bytes(b"".join(
+            compressor.compress(json.dumps(record).encode("utf-8") + b"\n") for record in records
+        ))
+        return parse(path, {"harness": "dsh", "session": "test"}, "S01")[0]
+
+    def dsh_records(self):
+        answers = json.dumps({"answers": [{"id": "scope", "selected": ["Full report"]}]})
+        return [
+            {"type": "session", "version": 4, "id": "session-test", "createdAt": 1794037718022,
+             "cwd": "/work/project", "isSeeded": False, "delegationDepth": 0},
+            {"type": "user/message", "seq": 0, "time": 1794037804257,
+             "data": {"id": "u1", "source": {"kind": "user"},
+                      "content": [{"type": "text", "text": "Build the report"}]}},
+            {"type": "user/message", "seq": 1, "time": 1794037804258,
+             "data": {"id": "ctx", "source": {"kind": "runtime-context"},
+                      "content": [{"type": "text", "text": "Current runtime context"}]}},
+            {"type": "request/context", "seq": 2, "time": 1794037804259,
+             "data": {"provider": "deepseek", "model": "deepseek-chat", "contextWindow": 1000000}},
+            {"type": "assistant/message", "seq": 3, "time": 1794037811713,
+             "data": {"turn": 1, "step": 1, "message": {
+                 "id": "a1", "role": "assistant",
+                 "source": {"kind": "model", "provider": "deepseek", "model": "deepseek-chat"},
+                 "content": [{"type": "reasoning", "text": "internal reasoning"},
+                             {"type": "text", "text": "Checking the repository."}]},
+                 "usage": {"inputTokens": 100, "outputTokens": 10, "totalTokens": 150,
+                           "cacheReadTokens": 40}}},
+            {"type": "tool/call", "seq": 4, "time": 1794037811716,
+             "data": {"turn": 1, "step": 1, "callId": "call_ask", "name": "ask_user_question"}},
+            {"type": "tool/result", "seq": 5, "time": 1794037811720,
+             "data": {"turn": 1, "step": 1, "toolCallId": "call_ask",
+                      "message": {"role": "tool", "toolCallId": "call_ask", "isError": False,
+                                  "content": [{"type": "text", "text": answers}]}}},
+            {"type": "assistant/message", "seq": 6, "time": 1794037811800,
+             "data": {"turn": 1, "step": 2, "message": {
+                 "id": "a2", "role": "assistant",
+                 "source": {"kind": "model", "provider": "deepseek", "model": "deepseek-chat"},
+                 "content": [{"type": "reasoning", "text": "one more step"}]},
+                 "usage": {"inputTokens": 20, "outputTokens": 5, "cacheReadTokens": 5}}},
+        ]
+
+    def test_dsh_messages_usage_tools_and_human_answers(self):
+        events = self.dsh_log(self.dsh_records())
+        self.assertEqual([event["kind"] for event in events],
+                         ["user", "assistant", "usage", "tool", "user", "usage"])
+        self.assertEqual(events[0]["text"], "Build the report")
+        self.assertEqual(events[1]["text"], "Checking the repository.")
+        self.assertEqual(events[2]["model"], "deepseek-chat")
+        self.assertEqual((events[2]["input"], events[2]["output"], events[2]["cached_read"]),
+                         (140, 10, 40))
+        self.assertEqual((events[5]["input"], events[5]["output"], events[5]["cached_read"]),
+                         (25, 5, 5))
+        self.assertFalse(events[2]["cache_write_known"])
+        self.assertTrue(events[2]["input_complete"])
+        self.assertFalse(events[5]["cache_write_known"])
+        self.assertFalse(events[5]["input_complete"])
+        self.assertEqual(events[3]["name"], "ask_user_question")
+        self.assertTrue(events[4]["form_response"])
+        self.assertIn("Full report", events[4]["text"])
+        self.assertNotIn("internal reasoning", json.dumps(events))
+        self.assertNotIn("Current runtime context", json.dumps(events))
+        self.assertEqual(events[0]["timestamp"], "2026-11-07T07:50:04.257Z")
+
+    def test_dsh_missing_cache_fields_stay_unknown(self):
+        def assistant(identity, usage):
+            return {"type": "assistant/message", "time": 1794037811713,
+                    "data": {"turn": 1, "step": 1, "message": {
+                        "id": identity, "role": "assistant",
+                        "source": {"kind": "model", "model": "deepseek-chat"},
+                        "content": [{"type": "text", "text": identity}]},
+                        "usage": usage}}
+
+        records = [
+            {"type": "session", "version": 4, "id": "session-test", "createdAt": 1,
+             "cwd": "/work/project", "isSeeded": False, "delegationDepth": 0},
+            assistant("missing", {"inputTokens": 100, "outputTokens": 10}),
+            assistant("zero", {"inputTokens": 100, "outputTokens": 10,
+                               "cacheReadTokens": 0, "cacheWriteTokens": 0}),
+            assistant("total-only", {"inputTokens": 100, "outputTokens": 10, "totalTokens": 150}),
+        ]
+        events = self.dsh_log(records)
+        missing, zero, total_only = [event for event in events if event["kind"] == "usage"]
+        self.assertEqual((missing["input"], missing["cached_read"], missing["cache_write"]),
+                         (100, 0, 0))
+        self.assertFalse(missing["cached_read_known"])
+        self.assertFalse(missing["cache_write_known"])
+        self.assertFalse(missing["input_complete"])
+        self.assertTrue(zero["cached_read_known"])
+        self.assertTrue(zero["cache_write_known"])
+        self.assertTrue(zero["input_complete"])
+        self.assertEqual(total_only["input"], 140)
+        self.assertFalse(total_only["cached_read_known"])
+        self.assertFalse(total_only["cache_write_known"])
+        self.assertTrue(total_only["input_complete"])
+
+        for usage in ({"outputTokens": 10}, {"inputTokens": 100},
+                      {"inputTokens": 100, "outputTokens": 10, "totalTokens": 5}):
+            with self.subTest(usage=usage):
+                with self.assertRaises(ValueError):
+                    self.dsh_log([records[0], assistant("bad", usage)])
+
+    def test_dsh_compressed_sessions_stream_concatenated_frames(self):
+        events = self.dsh_log(self.dsh_records(), compressed=True)
+        self.assertEqual(len(events), 6)
+        self.assertEqual(events[0]["text"], "Build the report")
+
+    def test_dsh_accounting_preserves_prompt_and_form_response_ownership(self):
+        for bracketed in (False, True):
+            for with_answer in (False, True):
+                with self.subTest(bracketed=bracketed, with_answer=with_answer):
+                    records = self.dsh_records()
+                    if with_answer:
+                        records[-1]["data"]["message"]["content"] = [
+                            {"type": "text", "text": "The report is ready."}]
+                    else:
+                        records = records[:5]
+                    if bracketed:
+                        records.insert(1, {"type": "turn/start", "time": 1794037804256,
+                                           "data": {"turn": 1}})
+                        records.append({"type": "turn/end", "time": 1794037811801,
+                                        "data": {"turn": 1, "reason": "completed"}})
+                    self.dsh_log(records)
+                    manifest = self.root / "manifest.json"
+                    manifest.write_text(json.dumps({
+                        "timezone": "UTC", "sources": [
+                            {"harness": "dsh", "session": "test", "path": "source.jsonl"}],
+                    }), encoding="utf-8")
+                    _, collection, events = collect(
+                        manifest, self.root / f"ownership-{bracketed}-{with_answer}")
+                    analysis = analyze(collection, events, {"summary": "Test", "decisions": []})
+                    accounting = analysis["accounting"]
+                    turns = accounting["turns"]
+                    replies = [event for event in events if event["kind"] == "assistant"]
+                    self.assertEqual([turn["calls"] for turn in turns],
+                                     [1, 1] if with_answer else [1])
+                    self.assertEqual([turn["response_ids"] for turn in turns],
+                                     [[reply["id"]] for reply in replies])
+                    self.assertEqual([request["turn"] for request in accounting["requests"]],
+                                     [turn["id"] for turn in turns])
+                    self.assertEqual(accounting["unattributed"]["calls"], 0)
+                    self.assertTrue(all(turn["duration_ms"] is not None for turn in turns))
+
+    def test_dsh_compressed_sessions_reject_incomplete_final_frames(self):
+        import zstandard
+        records = self.dsh_records()
+        compressor = zstandard.ZstdCompressor(write_checksum=True)
+        prefix = compressor.compress(
+            ("\n".join(json.dumps(record) for record in records[:4]) + "\n").encode("utf-8"))
+        final = compressor.compress((json.dumps(records[4]) + "\n").encode("utf-8"))
+        path = self.root / "session.v4.jsonl.zstd"
+        for retained in (1, 4, 10, len(final) - 1):
+            with self.subTest(retained=retained):
+                path.write_bytes(prefix + final[:retained])
+                with self.assertRaisesRegex(ValueError, "incomplete Zstandard frame"):
+                    parse(path, {"harness": "dsh", "session": "test"}, "S01")
+
+    def test_dsh_compressed_sessions_preserve_large_lines_and_unterminated_json(self):
+        import random
+        import zstandard
+        records = self.dsh_records()[:2]
+        text = random.Random(0).randbytes(100000).hex() + "\N{EURO SIGN}"
+        records[1]["data"]["content"] = [{"type": "text", "text": text}]
+        path = self.root / "session.v4.jsonl.zstd"
+        path.write_bytes(zstandard.ZstdCompressor().compress(
+            "\n".join(json.dumps(record, ensure_ascii=False) for record in records).encode("utf-8")))
+        events, _, count = parse(path, {"harness": "dsh", "session": "test"}, "S01")
+        self.assertEqual(count, 2)
+        self.assertEqual(events[0]["text"], text)
+
+    def test_dsh_future_or_past_format_versions_fail_explicitly(self):
+        records = self.dsh_records()
+        records[0]["version"] = 3
+        with self.assertRaisesRegex(ValueError, "session format v3 is unsupported"):
+            self.dsh_log(records)
+
     def test_shared_conversation_urls_are_redacted_without_removing_the_prompt(self):
         for host in ("claude.ai", "chatgpt.com", "chat.openai.com"):
             text = f"Use [this session](https://{host}/share/example-session?view=1), not https://example.org/docs."

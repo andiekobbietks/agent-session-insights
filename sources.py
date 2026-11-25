@@ -4,7 +4,8 @@ import re
 from datetime import datetime, timezone
 
 HARNESSES = {"copilot": "GitHub Copilot", "claude": "Claude Code", "codex": "Codex",
-             "cursor": "Cursor", "replit": "Replit"}
+             "dsh": "DeepSeek Harness", "cursor": "Cursor", "replit": "Replit"}
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 SECRET = re.compile(
     r"(?:sk-or-v1-|github_pat_|ghp_|gho_|hf_|sk-)[A-Za-z0-9_-]{15,}"
     r"|(?i:Bearer\s+)[A-Za-z0-9._~+/-]{16,}"
@@ -70,6 +71,9 @@ def tokens(input_tokens, output_tokens, cached=None, written=None):
 
 
 def jsonl(path):
+    if is_zstd(path):
+        yield from compressed_jsonl(path)
+        return
     with path.open(encoding="utf-8") as stream:
         for line, value in enumerate(stream, 1):
             if not value.strip():
@@ -81,6 +85,58 @@ def jsonl(path):
             if not isinstance(record, dict):
                 raise ValueError(f"{path.name}:{line}: expected a JSON object")
             yield line, record
+
+
+def is_zstd(path):
+    try:
+        with path.open("rb") as stream:
+            return stream.read(len(ZSTD_MAGIC)) == ZSTD_MAGIC
+    except OSError:
+        return False
+
+
+def compressed_jsonl(path):
+    """Stream concatenated Zstandard frames without assuming one frame per file."""
+    try:
+        import zstandard
+    except ImportError as error:
+        raise ValueError(
+            f"{path.name}: compressed DSH session logs need the zstandard package; "
+            "install agent-session-insights with its declared dependencies."
+        ) from error
+
+    def lines(raw):
+        decoder, pending = None, b""
+        while chunk := raw.read(65536):
+            while chunk:
+                if decoder is None or decoder.eof:
+                    decoder = zstandard.ZstdDecompressor().decompressobj()
+                decoded = (pending + decoder.decompress(chunk)).split(b"\n")
+                pending = decoded.pop()
+                chunk = decoder.unused_data
+                yield from decoded
+        if decoder is None or not decoder.eof:
+            raise ValueError(f"{path.name}: incomplete Zstandard frame")
+        if pending:
+            yield pending
+
+    try:
+        with path.open("rb") as raw:
+            for line, value in enumerate(lines(raw), 1):
+                value = value.decode("utf-8")
+                if not value.strip():
+                    continue
+                try:
+                    record = json.loads(value)
+                except json.JSONDecodeError as error:
+                    raise ValueError(f"{path.name}:{line}: malformed JSON") from error
+                if not isinstance(record, dict):
+                    raise ValueError(f"{path.name}:{line}: expected a JSON object")
+                yield line, record
+    except zstandard.ZstdError as error:
+        raise ValueError(
+            f"{path.name}: malformed or unsupported Zstandard session log ({error})"
+        ) from error
 
 
 def parse(path, spec, source_id):
@@ -147,6 +203,8 @@ def parse(path, spec, source_id):
 
     model, raw_count, boundary = "unknown", 0, None
     request_turns = {}
+    tool_names = {}
+    dsh_turn, dsh_input_turns = None, set()
     for line, record in jsonl(path):
         raw_count += 1
         kind, time = record.get("type"), record.get("timestamp")
@@ -244,6 +302,85 @@ def parse(path, spec, source_id):
                 ):
                     message("user", line, time, attachment.get("source_uuid") or identity,
                             attachment.get("prompt"))
+        elif harness == "dsh":
+            time = record.get("time")
+            data = record.get("data") or {}
+            turn = data.get("turn")
+            turn_id = turn if turn in dsh_input_turns else None
+            if kind == "session":
+                if record.get("version") != 4:
+                    raise ValueError(
+                        f"{path.name}: DSH session format v{record.get('version')} is unsupported; "
+                        "export it from a current DeepSeek Harness version (session format v4)."
+                    )
+            elif kind == "turn/start":
+                dsh_turn = turn
+            elif kind == "turn/end":
+                dsh_turn = None
+            elif kind == "request/context":
+                model = data.get("model") or model
+            elif kind == "user/message":
+                source = data.get("source") or {}
+                if source.get("kind") in ("user", "schedule"):
+                    # DSH records the prompt's turn on the enclosing turn/start event.
+                    if dsh_turn is not None and textof(data.get("content")):
+                        dsh_input_turns.add(dsh_turn)
+                    message("user", line, time, data.get("id", line), data.get("content"),
+                            turn_id=dsh_turn)
+            elif kind == "assistant/message":
+                payload = data.get("message") or {}
+                identity = payload.get("id", line)
+                source = payload.get("source") or {}
+                model = source.get("model") or model
+                message("assistant", line, time, identity, payload.get("content"),
+                        request_id=identity, turn_id=turn_id)
+                usage = data.get("usage")
+                if usage is not None:
+                    if not isinstance(usage, dict):
+                        raise ValueError("DSH assistant usage must be an object.")
+                    if "inputTokens" not in usage or "outputTokens" not in usage:
+                        raise ValueError("DSH usage must report inputTokens and outputTokens.")
+                    fresh = integer(usage["inputTokens"])
+                    output = integer(usage["outputTokens"])
+                    # Absent cache counters are unknown, not explicit zeros.
+                    cached = usage.get("cacheReadTokens")
+                    written = usage.get("cacheWriteTokens")
+                    cached = integer(cached) if cached is not None else None
+                    written = integer(written) if written is not None else None
+                    total = usage.get("totalTokens")
+                    if total is not None:
+                        total = integer(total)
+                        if total < output:
+                            raise ValueError("DSH totalTokens is smaller than its output tokens.")
+                        # DSH totalTokens is inclusive of cache reads and fresh input.
+                        inclusive = total - output
+                        input_complete = True
+                    else:
+                        inclusive = fresh + (cached or 0) + (written or 0)
+                        input_complete = cached is not None and written is not None
+                    if inclusive < fresh:
+                        raise ValueError("DSH usage disagrees with its inclusive token totals.")
+                    emit("usage", line, time, identity, model=source.get("model") or model or "unknown",
+                         turn_id=turn_id, input_complete=input_complete,
+                         **tokens(inclusive, output, cached, written))
+            elif kind == "tool/call":
+                tool_id = data.get("callId", line)
+                tool_names[tool_id] = data.get("name") or "unknown"
+                emit("tool", line, time, tool_id, name=tool_names[tool_id],
+                     turn_id=turn_id)
+            elif kind == "tool/result":
+                payload = data.get("message") or {}
+                tool_id = payload.get("toolCallId") or data.get("toolCallId")
+                if tool_names.get(tool_id) == "ask_user_question" and not payload.get("isError"):
+                    body = textof(payload.get("content"))
+                    try:
+                        answers = json.loads(body).get("answers")
+                    except (json.JSONDecodeError, AttributeError):
+                        answers = None
+                    if isinstance(answers, list) and answers:
+                        message("user", line, time, tool_id or line,
+                                json.dumps({"answers": answers}, ensure_ascii=False, indent=2),
+                                form_response=True, turn_id=turn_id)
         else:
             raise ValueError(f"Unsupported harness: {harness}")
     if harness == "copilot":
