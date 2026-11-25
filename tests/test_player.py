@@ -423,6 +423,27 @@ class PlayerTests(unittest.TestCase):
                             self.assertEqual(band["start"], visible[i - 1]["end"])
                 self.assertFalse(self.errors)
 
+    def test_reviewed_directions_do_not_overlay_day_and_night_shading(self):
+        zone = ZoneInfo("America/Los_Angeles")
+        start = round(datetime(2026, 11, 24, 17, 30, tzinfo=zone).timestamp() * 1000)
+        finish = round(datetime(2026, 11, 24, 18, 32, tzinfo=zone).timestamp() * 1000)
+        data = self.open_player([
+            ("user", start, "First direction", "one"),
+            ("user", finish, "Second direction", "one"),
+        ], decisions=[
+            {"input": "H001", "title": "First direction", "category": "Scope", "analysis": "First"},
+            {"input": "H002", "title": "Second direction", "category": "Scope", "analysis": "Second"},
+        ])
+        self.assertNotIn("clusters", data)
+        self.assertEqual(self.page.locator("#clusters, .cluster-card, .legend .cluster").count(), 0)
+        self.assertEqual(self.page.locator("#timeline > rect:not(.time-band)").count(), 1)
+        self.assertEqual(self.page.locator(".timeline-day, .timeline-night").count(), 2)
+        self.assertEqual(self.page.locator("#timeline polygon").count(), 2)
+        self.assertEqual(self.page.locator("#moments .moment-item").count(), 2)
+        self.page.locator("#moments .moment-item").last.click()
+        self.assertEqual(self.state()["message"], "H002")
+        self.assertFalse(self.errors)
+
     def test_embedded_player_hides_duplicate_header_and_footer(self):
         start = 1794071182211
         self.open_player([("user", start, "Prompt", "one")])
@@ -576,7 +597,7 @@ class PlayerTests(unittest.TestCase):
                     /^(auto|scroll)$/.test(getComputedStyle(el).overflowY) &&
                     el.scrollHeight > el.clientHeight
                 ).map(el => el.matches('.turn-content') ? 'turns' : el.matches('aside') ? 'directions' : el.id || el.className)""")
-                self.assertEqual(scrollable, ["turns", "moments", "clusters"])
+                self.assertEqual(scrollable, ["turns", "moments"])
                 self.assertEqual(replay.locator("aside").evaluate("el => el.scrollTop"), 0)
                 replay.evaluate("window.vennPlayback.jumpToMessage('R002')")
                 self.assertGreater(replay.locator(".turn-content").evaluate("el => el.scrollTop"), 0)
@@ -591,26 +612,29 @@ class PlayerTests(unittest.TestCase):
                 self.assertEqual(replay.locator(".text-controls").bounding_box()["y"], heading_top)
                 self.assertEqual(replay.locator(".activity").evaluate("el => el.scrollTop"), 0)
                 keyboard_state = replay.evaluate("window.vennPlayback.state()")
+                replay.locator(".turn-content").evaluate("""el => {
+                    el.addEventListener('scrollend', () => el.dataset.scrollEnded = 'true', {once:true});
+                }""")
                 replay.locator(".turn-content").focus()
                 replay.locator(".turn-content").press("ArrowUp")
+                replay.wait_for_function("document.querySelector('.turn-content').dataset.scrollEnded === 'true'")
                 self.assertEqual(replay.evaluate("window.vennPlayback.state()"), keyboard_state)
                 state = replay.evaluate("window.vennPlayback.state()")
-                for region, other in (("moments", "clusters"), ("clusters", "moments")):
-                    region_locator = replay.locator(f"#{region}")
-                    region_locator.focus()
-                    heading = region_locator.evaluate("el => el.parentElement.querySelector('h2').getBoundingClientRect().top")
-                    other_scroll = replay.locator(f"#{other}").evaluate("el => el.scrollTop")
-                    region_locator.evaluate("""el => {
-                        delete el.dataset.scrollEnded;
-                        el.addEventListener('scrollend', () => el.dataset.scrollEnded = 'true', {once:true});
-                    }""")
-                    region_locator.press("ArrowDown")
-                    replay.wait_for_function("(id) => document.getElementById(id).scrollTop > 0", arg=region)
-                    replay.wait_for_function("(id) => document.getElementById(id).dataset.scrollEnded === 'true'", arg=region)
-                    self.assertEqual(replay.locator(f"#{other}").evaluate("el => el.scrollTop"), other_scroll)
-                    self.assertEqual(region_locator.evaluate("el => el.parentElement.querySelector('h2').getBoundingClientRect().top"), heading)
-                    self.assertEqual(replay.evaluate("window.vennPlayback.state()"), state)
-                    self.assertEqual(replay.locator("aside").evaluate("el => el.scrollTop"), 0)
+                region = replay.locator("#moments")
+                region.focus()
+                heading = region.evaluate("el => el.parentElement.querySelector('h2').getBoundingClientRect().top")
+                other_scroll = replay.locator(".turn-content").evaluate("el => el.scrollTop")
+                region.evaluate("""el => {
+                    delete el.dataset.scrollEnded;
+                    el.addEventListener('scrollend', () => el.dataset.scrollEnded = 'true', {once:true});
+                }""")
+                region.press("ArrowDown")
+                replay.wait_for_function("document.getElementById('moments').scrollTop > 0")
+                replay.wait_for_function("document.getElementById('moments').dataset.scrollEnded === 'true'")
+                self.assertEqual(replay.locator(".turn-content").evaluate("el => el.scrollTop"), other_scroll)
+                self.assertEqual(region.evaluate("el => el.parentElement.querySelector('h2').getBoundingClientRect().top"), heading)
+                self.assertEqual(replay.evaluate("window.vennPlayback.state()"), state)
+                self.assertEqual(replay.locator("aside").evaluate("el => el.scrollTop"), 0)
                 before = replay.evaluate("innerHeight")
                 replay.locator("#usage-details").evaluate("el => el.open = true")
                 replay.wait_for_function("(height) => innerHeight > height", arg=before)

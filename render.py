@@ -163,7 +163,7 @@ def payload(events, analysis):
     timed = humans + updates + usage
     lo = min((e["t"] for e in timed), default=None)
     hi = max((e["t"] for e in timed), default=None)
-    days, day_night, clusters = [], [], []
+    days, day_night = [], []
     if timed:
         day = datetime.fromtimestamp(lo / 1000, ZoneInfo(analysis["timezone"])).replace(hour=0, minute=0, second=0, microsecond=0)
         while day.timestamp() * 1000 <= hi:
@@ -178,15 +178,6 @@ def payload(events, analysis):
                 if start < finish:
                     day_night.append({"start": start, "end": finish, "kind": "day" if i == 1 else "night"})
             day = end
-        conversations = {(h["tool"], h["session"]) for h in humans}
-        for tool, session in sorted(conversations):
-            pending = [h for h in humans if h["moment"] and (h["tool"], h["session"]) == (tool, session)]
-            while pending:
-                group = [h for h in pending if h["t"] - pending[0]["t"] <= 90 * 60000]
-                pending = pending[len(group):]
-                if len(group) >= 2:
-                    clusters.append({"id": f"B{len(clusters)+1:03d}", "start": group[0]["t"], "end": group[-1]["t"],
-                                     "inputs": [h["id"] for h in group], "count": len(group), "title": "Reviewed directions"})
     return {
         "meta": {"title": analysis["title"], "timezone": analysis["timezone"], "start": lo, "end": hi,
                  "human_count": len(humans), "model_event_count": len(usage), "assistant_update_count": len(updates),
@@ -194,7 +185,7 @@ def payload(events, analysis):
                  "method": "Navigate messages manually. Selecting an input lists all its recorded assistant responses with timestamps and sources. Selecting a response highlights it without hiding other replies. Ownership follows recorded turn IDs or matching requests before inferred same-conversation proximity. Gold marks reviewed directions. Unknown times remain outside the clock. Model events use per-request usage, not cumulative counters."},
         "sessions": sorted(sessions.values(), key=lambda row: (row["start"] is None, row["start"] or 0, row["tool"], row["session"])),
         "days": days, "day_night": day_night,
-        "humans": humans, "updates": updates, "usage": usage, "undated": undated, "clusters": clusters,
+        "humans": humans, "updates": updates, "usage": usage, "undated": undated,
         "accounting": {
             **analysis["accounting"],
             "requests": [{**r, "tool": HARNESSES[r["harness"]]} for r in analysis["accounting"]["requests"]],
