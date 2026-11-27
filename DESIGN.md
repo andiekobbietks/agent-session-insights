@@ -354,3 +354,31 @@ PDF. Do not publish if any check fails. Never upload logs or auto-install extrac
 Batch browser snapshots and filter sweeps, retaining every message and filter check
 and Python-side accounting reconciliation. Offline pages wait for completed loads,
 not an additional network-idle interval.
+
+
+## AgentSON v1.2 source contract
+
+AgentSON is an explicitly selected source format, not a native discovery
+provider. The manifest identifies the source with `harness: "agentson"` and
+the exact stream/session identifier. The reader accepts canonical v1.2 JSON
+documents and v1.2 JSONL streams beginning with `stream-meta`, and validates
+them with the vendored AgentSON v1.2 document and entry schemas.
+
+The reporting projection is intentionally privacy-aware:
+- `user-query` and `user-feedback` become user events; `answer` becomes an
+  assistant event.
+- `action`, `observation`, `side-effect`, `handoff`, `presence`,
+  `capabilities`, and `system-event` become tool/evidence events with their
+  AgentSON type, agent, correlation and provenance metadata.
+- `thought` entries are not emitted into report events. They remain in the
+  private source snapshot.
+- Session-level token/cost summaries are not treated as per-request usage.
+
+**Round-trip guarantee:** Agent Session Insights does not claim that its
+normalized `events.jsonl` can reconstruct an AgentSON stream. Instead, it
+freezes the original source bytes under `private/sources`, records SHA-256 in
+`collection.json`, and exposes `agentson-export` to copy the verified source
+archive byte-for-byte. Export rejects a digest mismatch, unsafe snapshot path,
+non-AgentSON source, or existing destination. Tests assert byte equality and
+tamper rejection. This separates a deliberately lossy analytical projection
+from lossless preservation of the source archive.
