@@ -49,6 +49,8 @@ only-include = [
   "agentson.py",
   "agentson-v1.2.json",
   "agentson-v1.2-entries.json",
+  "AGENTSON-SCHEMA-NOTICE.md",
+  "AGENTSON-SCHEMA-LICENSE.txt",
   "assets/player.css",
   "assets/player.html",
   "assets/player.js",
