@@ -148,6 +148,9 @@ class AgentSONReaderTests(unittest.TestCase):
         collection = json.loads((review / "collection.json").read_text(encoding="utf-8"))
         self.assertEqual(collection["sources"][0]["sha256"], digest)
         self.assertEqual(collection["sources"][0]["harness"], "agentson")
+        self.assertEqual(collection["sources"][0]["counts"]["tool"], 7)
+        self.assertEqual(collection["sources"][0]["counts"]["user"], 2)
+        self.assertEqual(collection["sources"][0]["counts"]["assistant"], 1)
 
     def test_export_refuses_tampered_snapshot(self):
         review = self.root / "review"
