@@ -86,6 +86,7 @@ only-include = [
   "review.py",
   "sources.py",
   "agentson.py",
+  "linkedin.py",
   "agentson-v1.2.json",
   "agentson-v1.2-entries.json",
   "AGENTSON-SCHEMA-NOTICE.md",
