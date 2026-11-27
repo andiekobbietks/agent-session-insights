@@ -154,17 +154,21 @@ class AgentSONReaderTests(unittest.TestCase):
 
     def test_credentials_are_redacted_from_report_but_original_is_exportable(self):
         values = records()
+        values[0]["stream_id"] = "ghp_abcdefghijklmnopqrs"
         values[1]["text"] = "Use this credential: Bearer abcdefghijklmnopqrstuvwxyz123456"
+        values[3]["tool_call_id"] = "ghp_zyxwvutsrqponmlkjihg"
         values[3]["args"] = {"note": "api_key=abcdefghijklmnop123456"}
         values[3]["provenance"] = {"url": "https://chatgpt.com/share/private-session-token"}
         original = self.write_stream(values)
         events, _warnings, _count = parse(
-            original, {"harness": "agentson", "session": "agentson-test-001"}, "S01"
+            original, {"harness": "agentson", "session": "ghp_abcdefghijklmnopqrs"}, "S01"
         )
         projection = json.dumps(events)
         self.assertNotIn("abcdefghijklmnopqrstuvwxyz123456", projection)
         self.assertNotIn("abcdefghijklmnop123456", projection)
         self.assertNotIn("private-session-token", projection)
+        self.assertNotIn("ghp_abcdefghijklmnopqrs", projection)
+        self.assertNotIn("ghp_zyxwvutsrqponmlkjihg", projection)
         self.assertIn("[REDACTED_CREDENTIAL]", projection)
         self.assertIn("[REDACTED_SHARED_SESSION_URL]", projection)
 
