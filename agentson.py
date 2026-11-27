@@ -80,6 +80,16 @@ def _timestamp(value, label):
         raise ValueError(f"{label}: timestamp is outside the supported range.") from error
 
 
+def _redact_tree(value, redact):
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, list):
+        return [_redact_tree(item, redact) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_tree(item, redact) for key, item in value.items()}
+    return value
+
+
 def parse_agentson(path, spec, source_id, redact):
     """Validate AgentSON v1.2 and produce a privacy-aware reporting projection."""
     mode, loaded = _load(path)
@@ -133,12 +143,13 @@ def parse_agentson(path, spec, source_id, redact):
             "source": f"{source_id}:{line}",
             "identity": str(entry.get("id") or entry.get("tool_call_id")
                             or entry.get("correlation_id") or line),
-            "agentson_entry_type": entry_type, "agentson_tool": tool_name,
-            "agentson_agent": entry.get("agent"),
-            "agentson_correlation_id": entry.get("correlation_id"),
-            "agentson_provenance": entry.get("provenance"),
+            "agentson_entry_type": entry_type, "agentson_tool": redact(tool_name) if isinstance(tool_name, str) else tool_name,
+            "agentson_agent": _redact_tree(entry.get("agent"), redact),
+            "agentson_correlation_id": _redact_tree(entry.get("correlation_id"), redact),
+            "agentson_provenance": _redact_tree(entry.get("provenance"), redact),
             "agentson_session_metadata": {
-                "model": agent_meta.get("name"), "provider": agent_meta.get("provider"),
+                "model": _redact_tree(agent_meta.get("name"), redact),
+                "provider": _redact_tree(agent_meta.get("provider"), redact),
             },
         }
         if kind in ("user", "assistant"):
@@ -146,17 +157,17 @@ def parse_agentson(path, spec, source_id, redact):
             if entry_type == "user-feedback":
                 event["form_response"] = True
         else:
-            event["name"] = entry["tool"] if entry_type == "action" else f"AgentSON {entry_type}"
+            event["name"] = redact(entry["tool"]) if entry_type == "action" else f"AgentSON {entry_type}"
             detail = entry.get("text") or entry.get("output") or entry.get("message")
             if detail is None and entry_type == "action":
                 detail = entry.get("code")
             if detail is not None:
-                event["detail"] = redact(detail) if isinstance(detail, str) else json.dumps(
-                    detail, ensure_ascii=False, sort_keys=True
+                event["detail"] = _redact_tree(detail, redact) if isinstance(detail, str) else json.dumps(
+                    _redact_tree(detail, redact), ensure_ascii=False, sort_keys=True
                 )
             for field in ("status", "duration_ms", "tool_call_id", "from", "to", "reason"):
                 if field in entry:
-                    event[f"agentson_{field}"] = entry[field]
+                    event[f"agentson_{field}"] = _redact_tree(entry[field], redact)
         events.append(event)
 
     if hidden_thoughts:
