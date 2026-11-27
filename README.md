@@ -309,7 +309,7 @@ linkedin-agentson --input .\Complete_LinkedInDataExport.zip --output .\linkedin-
 If you have already extracted the archive, pass the folder instead. To inspect
 other CSVs in the archive, add `--all-csv`. Review the resulting files before
 sharing them: LinkedIn exports can contain personal data and conversation text.
-Roleplay feedback is represented as feedback, not invented tool execution.
+The selected source CSV files are copied byte-for-byte into a private, permission-restricted `private/source-csv` folder and their SHA-256 digests are recorded in each AgentSON document. Roleplay feedback is represented as observation evidence, not invented tool execution.
 Only events present in the export are converted; this adapter does not fabricate
 tool calls, model usage, or agent lifecycle events.
 
