@@ -24,7 +24,7 @@ def check(directory):
         "__init__.py", "__main__.py", "review.py", "sources.py", "agentson.py", "accounting.py", "retail-pricing.json",
         "discovery.py", "render.py", "assets/player.html", "assets/player.css",
         "assets/player.js", "assets/theme.css", "assets/theme.js",
-        "README.md", "DESIGN.md", "agentson-v1.2.json", "agentson-v1.2-entries.json", "AGENTSON-SCHEMA-NOTICE.md", "prompts/review.md",
+        "README.md", "DESIGN.md", "agentson-v1.2.json", "agentson-v1.2-entries.json", "AGENTSON-SCHEMA-NOTICE.md", "AGENTSON-SCHEMA-LICENSE.txt", "prompts/review.md",
         ".github/agents/agent-session-insights.agent.md",
         ".github/skills/collect-sessions/SKILL.md",
         ".github/skills/analyze-sessions/SKILL.md",
@@ -39,6 +39,8 @@ def check(directory):
         raise ValueError("The wheel is missing the MIT license.")
     if not any(".dist-info/licenses/AGENTSON-SCHEMA-LICENSE.txt" in name for name in wheel_names):
         raise ValueError("The wheel is missing the Apache license for vendored AgentSON schemas.")
+    if not any(path.endswith("/AGENTSON-SCHEMA-LICENSE.txt") for path in source_names):
+        raise ValueError("The source distribution is missing the Apache license for vendored AgentSON schemas.")
     if any("/" not in name for name in wheel_names):
         raise ValueError("The wheel must not install unnamespaced top-level files.")
     print(f"Checked wheel and source distribution in {directory.resolve()}")
