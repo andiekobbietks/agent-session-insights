@@ -8,6 +8,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentson import export_source_snapshot
 from sources import parse
+from review import collect
 
 
 def records():
@@ -123,6 +124,27 @@ class AgentSONReaderTests(unittest.TestCase):
         self.assertEqual(exported.read_bytes(), data)
         with self.assertRaisesRegex(ValueError, "Refusing to overwrite"):
             export_source_snapshot(review, "S01", exported)
+
+    def test_collect_then_export_is_byte_identical_end_to_end(self):
+        original = self.write_stream()
+        manifest = self.root / "manifest.json"
+        manifest.write_text(json.dumps({
+            "title": "AgentSON end-to-end",
+            "timezone": "Europe/London",
+            "sources": [{
+                "harness": "agentson",
+                "path": original.name,
+                "session": "agentson-test-001",
+            }],
+        }), encoding="utf-8")
+        review = self.root / "review"
+        collect(manifest, review)
+        exported = self.root / "exported.agentson"
+        digest = export_source_snapshot(review, "S01", exported)
+        self.assertEqual(exported.read_bytes(), original.read_bytes())
+        collection = json.loads((review / "collection.json").read_text(encoding="utf-8"))
+        self.assertEqual(collection["sources"][0]["sha256"], digest)
+        self.assertEqual(collection["sources"][0]["harness"], "agentson")
 
     def test_export_refuses_tampered_snapshot(self):
         review = self.root / "review"
