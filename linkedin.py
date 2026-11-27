@@ -66,11 +66,13 @@ def _timestamp(value):
     return round(parsed.astimezone(timezone.utc).timestamp() * 1000)
 
 
-def _role(row, sender_col, sender_url_col, role_col, self_sender, self_profile_url):
+def _role(row, sender_col, sender_url_col, role_col, self_sender, self_profile_url, ai_export=False):
     sender = str(row.get(sender_col) or "").strip() if sender_col else ""
     sender_url = str(row.get(sender_url_col) or "").strip() if sender_url_col else ""
     if self_profile_url and sender_url and sender_url.rstrip("/").lower() == self_profile_url.rstrip("/").lower():
         return "user", "confirmed"
+    if ai_export and self_profile_url and sender_url:
+        return "assistant", "inferred"
     value = sender.lower()
     if value in {"user", "human", "member", "you", "me", "learner", "student"}:
         return "user", "confirmed"
@@ -166,6 +168,7 @@ def convert_csv(name, data, *, self_sender=None, self_profile_url=None):
                 role, confidence = _role(
                     row, sender_col, sender_url_col, sender_col,
                     self_sender, self_profile_url,
+                    ai_export=any(marker in name.lower() for marker in AI_EXPORT_MARKERS),
                 )
                 entries.append({
                     "type": "user-query" if role == "user" else "answer",
@@ -219,6 +222,8 @@ def convert_csv(name, data, *, self_sender=None, self_profile_url=None):
 def convert_archive(source, output, *, self_sender=None, self_profile_url=None, include_all=False):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
+    if any(output.iterdir()):
+        raise ValueError("Output directory must be empty; existing files will not be overwritten.")
     created = []
     seen = set()
     files = list(_inputs(source, include_all))
