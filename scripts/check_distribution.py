@@ -37,6 +37,8 @@ def check(directory):
             raise ValueError(f"Missing source distribution resource: {name}")
     if not any(".dist-info/licenses/LICENSE" in name for name in wheel_names):
         raise ValueError("The wheel is missing the MIT license.")
+    if not any(".dist-info/licenses/AGENTSON-SCHEMA-LICENSE.txt" in name for name in wheel_names):
+        raise ValueError("The wheel is missing the Apache license for vendored AgentSON schemas.")
     if any("/" not in name for name in wheel_names):
         raise ValueError("The wheel must not install unnamespaced top-level files.")
     print(f"Checked wheel and source distribution in {directory.resolve()}")
