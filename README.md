@@ -42,6 +42,61 @@ AgentSON remains the interchange layer; Agent Session Insights remains the analy
 
 The LinkedIn importer is deliberately separate from LinkedIn itself: it processes an archive that the account holder has downloaded. It does not log in, scrape LinkedIn, use a Premium API, or unlock categories that LinkedIn did not include in the archive. Premium status does not guarantee that every category is available.
 
+## Productivity evidence: what the reports can and cannot claim
+
+Agent Session Insights can provide part of the evidence needed to evaluate whether
+AI-assisted development improves productivity. **Session activity is not, by
+itself, a productivity measure.** Tokens, tool calls, recorded turns, elapsed
+spans, and estimated API-equivalent costs describe what the captured agent
+sessions recorded. They do not establish how much useful work a developer
+completed, whether the result was correct, or what would have happened without
+the agent.
+
+A defensible productivity evaluation needs an additional, outcome-based
+measurement layer. It should connect each scoped task to evidence beyond the
+conversation:
+
+1. **Define the task before work begins.** Record the intended outcome,
+   acceptance criteria, task type and a lightweight complexity assessment.
+   Keep the definition stable so that success is not retrospectively redefined
+   around what the agent happened to produce.
+2. **Verify the delivered outcome.** Link the task to independently checkable
+   evidence such as CI/test results, reviewed commits or pull requests,
+   acceptance checks, defect findings and user/reviewer sign-off. Distinguish
+   an agent's statement that something passed from a test result or human
+   review that actually verifies it.
+3. **Measure human effort separately.** Use an explicitly collected,
+   privacy-conscious measure of developer active time or effort. Session
+   timestamps and prompt-to-response spans are not active working time;
+   occupied timeline bins are not a substitute for time tracking.
+4. **Account for quality and rework.** Record defects, rejected output,
+   revisions, rollbacks and follow-up work. A faster first draft is not a
+   productivity gain if it creates more correction or maintenance work.
+5. **Compare like with like.** Use a predeclared baseline or a suitable
+   comparison group, repeat across representative tasks, and account for task
+   type, complexity, developer experience and project conditions. Report sample
+   size, missing data and uncertainty rather than presenting a single
+   unqualified percentage.
+6. **Show the trade-offs.** Present accepted outcomes, human effort, elapsed
+   lead time, rework/quality indicators and agent/API-equivalent cost together.
+   Do not collapse them into one score unless the weighting and rationale are
+   explicit.
+
+With those inputs, the application can become an **evidence-linked
+productivity evaluation tool**: it can join recorded agent activity and costs
+to independently verified task outcomes and a documented comparison method.
+That supports a bounded claim such as a measured change in accepted task
+throughput or human effort for a defined class of work and study period. It
+does not automatically prove that AI caused the change, and it should not
+generalise one team's result to all developers.
+
+**Implementation status:** the current reporting pipeline provides session
+accounting, source coverage, evidence-linked annotations and provenance
+snapshots. It does not yet implement the full task/outcome dataset, active-time
+collection, controlled comparison design or statistical evaluation described
+above. Those are a separate measurement layer to build and validate; they must
+not be implied by existing token, timeline or annotation reports.
+
 ## Install
 
 Use Python 3.12 or later. The PyPI command below installs the upstream MIT Alpha
