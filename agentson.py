@@ -138,11 +138,11 @@ def parse_agentson(path, spec, source_id, redact):
         if kind is None:
             raise ValueError(f"{path.name}:{line}: unsupported AgentSON entry type {entry_type!r}.")
         event = {
-            "harness": "agentson", "session": str(session_id), "kind": kind,
+            "harness": "agentson", "session": redact(str(session_id)), "kind": kind,
             "timestamp": _timestamp(entry.get("timestamp"), f"{path.name}:{line}"),
             "source": f"{source_id}:{line}",
-            "identity": f"{entry_type}:" + str(entry.get("id") or entry.get("tool_call_id")
-                            or entry.get("correlation_id") or f"{source_id}:{line}"),
+            "identity": redact(f"{entry_type}:" + str(entry.get("id") or entry.get("tool_call_id")
+                            or entry.get("correlation_id") or f"{source_id}:{line}")),
             "agentson_entry_type": entry_type, "agentson_tool": redact(tool_name) if isinstance(tool_name, str) else tool_name,
             "agentson_agent": _redact_tree(entry.get("agent"), redact),
             "agentson_correlation_id": _redact_tree(entry.get("correlation_id"), redact),
