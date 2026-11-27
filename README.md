@@ -1,5 +1,8 @@
 # Agent Session Insights
 
+> **Beta candidate:** this fork adds AgentSON v1.2 import and verified source-archive export. It is not the upstream PyPI release. See the beta validation workflow and open pull request before relying on it in production.
+
+
 Create offline reports from coding-agent conversations: complete messages,
 evidence-linked analysis, per-model token and cost comparisons, and a zoomable
 timeline with local day/night shading. Supports Copilot CLI, Claude Code, Codex,
@@ -344,4 +347,7 @@ and open them locally; GitHub's file viewer does not run the player.
 See the [maintainer guide](https://github.com/markrussinovich/agent-session-insights/blob/main/MAINTAINING.md)
 for checkout setup, tests, example provenance, GitHub Pages deployment, and PyPI
 releases. [DESIGN.md](DESIGN.md) contains collection, accounting, privacy, and
-player contracts. The project is [MIT licensed](LICENSE).
+player contracts. The application and this fork's original code are [MIT licensed](LICENSE).
+The vendored AgentSON v1.2 JSON Schemas are separately distributed under
+[Apache License 2.0](AGENTSON-SCHEMA-LICENSE.txt), with attribution in
+[AGENTSON-SCHEMA-NOTICE.md). This does not relicense the application as Apache 2.0.
