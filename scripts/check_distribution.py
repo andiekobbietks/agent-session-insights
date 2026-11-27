@@ -29,7 +29,7 @@ def check(directory):
             raise ValueError(f"Unexpected private/history artifact in distribution: {name}")
 
     runtime_resources = (
-        "__init__.py", "__main__.py", "review.py", "sources.py", "agentson.py",
+        "__init__.py", "__main__.py", "review.py", "sources.py", "agentson.py", "linkedin.py",
         "accounting.py", "retail-pricing.json", "discovery.py", "render.py",
         "assets/player.html", "assets/player.css", "assets/player.js",
         "assets/theme.css", "assets/theme.js", "README.md", "DESIGN.md",
