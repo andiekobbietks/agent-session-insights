@@ -176,7 +176,7 @@ jobs:
           except ValueError:
               raise SystemExit(f"Missing changelog section: {heading}")
           end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-          notes = "\\n".join(lines[start:end]).strip() + "\\n"
+          notes = "\n".join(lines[start:end]).strip() + "\n"
           Path(os.environ["NOTES_FILE"]).write_text(notes, encoding="utf-8")
           PY
       - name: Create the matching GitHub release
