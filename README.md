@@ -16,8 +16,20 @@ or [PDF](https://markrussinovich.github.io/agent-session-insights/report.pdf).
 
 ## Install
 
-Use Python 3.12 or later. Install the package and its Chromium renderer in a
-virtual environment:
+Use Python 3.12 or later. The PyPI command below installs the upstream MIT Alpha
+release and does **not** include this fork's AgentSON integration. To test the
+AgentSON beta candidate, clone this fork's feature branch and install it with
+`python -m pip install -e .` instead:
+
+```powershell
+git clone --branch feat/agentson-v1.2-import-roundtrip https://github.com/andiekobbietks/agent-session-insights.git
+Set-Location agent-session-insights
+python -m pip install -e .
+python -m playwright install chromium
+```
+
+For the upstream PyPI package, use Python 3.12 or later and install it with its
+Chromium renderer in a virtual environment:
 
 **Windows PowerShell**
 
@@ -350,4 +362,4 @@ releases. [DESIGN.md](DESIGN.md) contains collection, accounting, privacy, and
 player contracts. The application and this fork's original code are [MIT licensed](LICENSE).
 The vendored AgentSON v1.2 JSON Schemas are separately distributed under
 [Apache License 2.0](AGENTSON-SCHEMA-LICENSE.txt), with attribution in
-[AGENTSON-SCHEMA-NOTICE.md). This does not relicense the application as Apache 2.0.
+[AGENTSON-SCHEMA-NOTICE.md](AGENTSON-SCHEMA-NOTICE.md). This does not relicense the application as Apache 2.0.
