@@ -11,6 +11,10 @@ def check(directory):
         raise ValueError("Expected exactly one wheel and one source distribution.")
     with zipfile.ZipFile(wheels[0]) as archive:
         wheel_names = archive.namelist()
+        metadata_name = next((name for name in wheel_names if name.endswith(".dist-info/METADATA")), None)
+        if metadata_name is None:
+            raise ValueError("The wheel is missing Core Metadata.")
+        metadata = archive.read(metadata_name).decode("utf-8")
     with tarfile.open(sources[0]) as archive:
         source_names = [member.name for member in archive.getmembers() if member.isfile()]
     for name in wheel_names + source_names:
@@ -35,8 +39,12 @@ def check(directory):
             raise ValueError(f"Missing wheel runtime resource: {name}")
         if not any(path.endswith("/" + name) for path in source_names):
             raise ValueError(f"Missing source distribution resource: {name}")
+    if "License-Expression: MIT AND Apache-2.0" not in metadata:
+        raise ValueError("The wheel metadata must declare both MIT and Apache-2.0 components.")
     if not any(".dist-info/licenses/LICENSE" in name for name in wheel_names):
-        raise ValueError("The wheel is missing the MIT license.")
+        raise ValueError("The wheel is missing the MIT application license.")
+    if not any(path.endswith("/LICENSE") for path in source_names):
+        raise ValueError("The source distribution is missing the MIT application license.")
     if not any(".dist-info/licenses/AGENTSON-SCHEMA-LICENSE.txt" in name for name in wheel_names):
         raise ValueError("The wheel is missing the Apache license for vendored AgentSON schemas.")
     if not any(path.endswith("/AGENTSON-SCHEMA-LICENSE.txt") for path in source_names):
