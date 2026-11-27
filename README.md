@@ -220,6 +220,13 @@ The reader validates inputs against the vendored AgentSON v1.2 JSON Schemas.
 Legacy v1/v1.1 documents are rejected with a migration message rather than
 silently interpreted as v1.2.
 
+For this fork, install the integration from the checkout (the upstream PyPI
+release does not contain this fork-only change until it is released):
+
+```powershell
+python -m pip install -e .
+```
+
 Create a manifest beside your archive:
 
 ```json
