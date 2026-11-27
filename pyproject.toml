@@ -98,6 +98,8 @@ only-include = [
   ".github/skills/analyze-sessions/SKILL.md",
   ".github/skills/publish-review/SKILL.md",
   "README.md",
+  "CHANGELOG.md",
+  "SECURITY.md",
   "DESIGN.md",
   "prompts/review.md",
   "requirements.txt",
