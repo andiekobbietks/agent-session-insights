@@ -13,8 +13,7 @@ from sources import parse
 def records():
     return [
         {"type": "stream-meta", "stream_id": "agentson-test-001",
-         "agents": [{"id": "agent-1", "name": "Test agent"}], "mode": "single",
-         "source": {"platform": "test-harness", "sessionId": "agentson-test-001"},
+         "agents": [{"id": "agent-1", "name": "Test agent"}], "mode": "single" ,
          "timestamp": 1795780800000},
         {"type": "user-query", "agent": "user", "text": "Inspect the project.",
          "timestamp": 1795780801000, "provenance": {"source": "user", "confidence": "confirmed"}},
@@ -32,7 +31,7 @@ def records():
         {"type": "capabilities", "agent": "agent-2", "capabilities": {"review": "Review code"}},
         {"type": "side-effect", "action": "file_write", "path": "src/example.py"},
         {"type": "user-feedback", "text": "Please add a test.", "timestamp": 1795780806000},
-        {"type": "system-event", "text": "Run completed.", "source": "system"},
+        {"type": "system-event", "text": "Run completed.", "source": "manual"},
     ]
 
 
