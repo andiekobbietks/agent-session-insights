@@ -33,7 +33,7 @@ class LinkedInAgentSONTests(unittest.TestCase):
         result = convert_csv("learning_role_play_messages.csv", csv_data)
         entries = result[0][1]["entries"]
         self.assertEqual([entry["type"] for entry in entries],
-                         ["stream-meta", "user-query", "user-feedback"])
+                         ["stream-meta", "user-query", "observation"])
         self.assertNotIn("tool", json.dumps(entries))
 
     def test_unknown_sender_requires_explicit_identity_mapping(self):
