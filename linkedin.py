@@ -129,7 +129,7 @@ def _inputs(source, include_all):
         raise ValueError("Input must be a LinkedIn ZIP archive, extracted directory, or CSV file.")
 
 
-def convert_csv(name, data, *, self_sender=None, self_profile_url=None):
+def convert_csv(name, data, *, self_sender=None, self_profile_url=None, source_sha256=None, source_snapshot=None):
     headers, rows = _read_csv_bytes(name, data)
     conv_col = _column(headers, ALIASES["conversation"])
     message_col = _column(headers, ALIASES["message"])
@@ -210,7 +210,7 @@ def convert_csv(name, data, *, self_sender=None, self_profile_url=None):
             "tool": {"name": "other", "session_id": session_id},
             "agent": {"name": "LinkedIn AI", "provider": "LinkedIn"},
             "task": f"Imported LinkedIn conversation from {Path(name).name}",
-            "context": {"platform": "LinkedIn", "url": "https://www.linkedin.com"},
+            "context": {"platform": "LinkedIn", "url": "https://www.linkedin.com",\n                        "source_archive": {"path": source_snapshot, "sha256": source_sha256,\n                                           "media_type": "text/csv"} if source_sha256 else {}},
             "entries": entries,
         }
         validator_path = Path(__file__).resolve().parent / "agentson-v1.2.json"
