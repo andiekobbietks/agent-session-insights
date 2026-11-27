@@ -285,6 +285,40 @@ object, and payload even where the reporting projection intentionally omits
 data. Review private snapshots before sharing; they may contain sensitive
 conversation content or credentials.
 
+### LinkedIn AI conversation exports to AgentSON
+
+This fork includes a local converter for LinkedIn member data archives. It reads
+CSV files from a ZIP archive, an extracted archive directory, or an individual
+CSV and writes one schema-validated AgentSON v1.2 `.agentson` document per
+conversation. It does not sign in to LinkedIn, scrape the website, or bypass
+account entitlements.
+
+Known Learning/AI export filename patterns include `guide_messages.csv`,
+`learning_coach_messages.csv`, `LearningCoachMessages.csv`, and
+`learning_role_play_messages.csv`. The converter checks message, sender,
+conversation, timestamp, question/answer, and feedback columns. It refuses to
+guess who wrote a message when the sender cannot be safely classified. Supply
+`--self-sender` or `--self-profile-url` if the archive uses a sender label or
+profile URL that is not self-identifying. Timestamps without a timezone are
+rejected rather than silently assigned one.
+
+```powershell
+linkedin-agentson --input .\Complete_LinkedInDataExport.zip --output .\linkedin-agentson
+```
+
+If you have already extracted the archive, pass the folder instead. To inspect
+other CSVs in the archive, add `--all-csv`. Review the resulting files before
+sharing them: LinkedIn exports can contain personal data and conversation text.
+Roleplay feedback is represented as feedback, not invented tool execution.
+Only events present in the export are converted; this adapter does not fabricate
+tool calls, model usage, or agent lifecycle events.
+
+The LinkedIn archive must be requested and downloaded by the account holder.
+LinkedIn only includes data categories applicable to that account and activity;
+the presence of a Premium trial does not guarantee every AI/Learning export
+category is available. See [LinkedIn's data-download guidance](https://www.linkedin.com/help/linkedin/answer/a1339364)
+and request only the categories you need.
+
 ### Explicit exports and manifests
 
 Create a JSON manifest for selected history files, including Cursor/Replit
