@@ -205,6 +205,64 @@ agent-session-insights run --manifest .\agent-session-reports\my-project\manifes
 Keep the original directory intact: the manifest references files saved beside
 it. This avoids rereading changing live logs or repeating model interpretation.
 
+### AgentSON v1.2 interchange
+
+Agent Session Insights can consume an AgentSON v1.2 archive as an explicitly
+selected source. This is an adapter, not a replacement for the AgentSON
+canonical format.
+
+The reader accepts either:
+- A v1.2 JSON document with an `entries` array and the canonical
+  `https://agentson.dev/schema/v1.2.json` schema identifier.
+- A v1.2 JSONL stream whose first record is `stream-meta`.
+
+The reader validates inputs against the vendored AgentSON v1.2 JSON Schemas.
+Legacy v1/v1.1 documents are rejected with a migration message rather than
+silently interpreted as v1.2.
+
+Create a manifest beside your archive:
+
+```json
+{
+  "title": "AgentSON session review",
+  "timezone": "Europe/London",
+  "sources": [
+    {
+      "harness": "agentson",
+      "path": "session.agentson",
+      "session": "YOUR_STREAM_ID"
+    }
+  ]
+}
+```
+
+Generate the report without launching a model:
+
+```powershell
+agent-session-insights run --manifest .\\agentson-review.json --output .\\agentson-review
+```
+
+The report projection maps user queries and feedback to user messages,
+answers to assistant messages, and actions/observations/handoffs/state events
+to tool evidence. Private `thought` entries are retained in the private
+byte-for-byte source snapshot but excluded from report events. Session-level
+token/cost summaries are not fabricated into per-request usage.
+
+**Lossless archive round-trip:** normalized report events are not a reversible
+serialization of AgentSON. The original archive is frozen, SHA-256 verified,
+and can be exported byte-for-byte:
+
+```powershell
+agentson-export --review-dir .\\agentson-review --source S01 --output .\\roundtrip.agentson
+```
+
+The exporter refuses modified snapshots and existing destination files. The
+round-trip test asserts exact byte equality and hash verification. This
+preserves every original entry, extension field, correlation, provenance
+object, and payload even where the reporting projection intentionally omits
+data. Review private snapshots before sharing; they may contain sensitive
+conversation content or credentials.
+
 ### Explicit exports and manifests
 
 Create a JSON manifest for selected history files, including Cursor/Replit
