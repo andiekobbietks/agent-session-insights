@@ -362,4 +362,6 @@ releases. [DESIGN.md](DESIGN.md) contains collection, accounting, privacy, and
 player contracts. The application and this fork's original code are [MIT licensed](LICENSE).
 The vendored AgentSON v1.2 JSON Schemas are separately distributed under
 [Apache License 2.0](AGENTSON-SCHEMA-LICENSE.txt), with attribution in
-[AGENTSON-SCHEMA-NOTICE.md](AGENTSON-SCHEMA-NOTICE.md). This does not relicense the application as Apache 2.0.
+[AGENTSON-SCHEMA-NOTICE.md](AGENTSON-SCHEMA-NOTICE.md). Package metadata records
+both component licences as `MIT AND Apache-2.0`; this does not relicense the
+application as Apache 2.0. See the [changelog](CHANGELOG.md) and [security policy](SECURITY.md).
