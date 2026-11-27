@@ -231,9 +231,22 @@ def convert_archive(source, output, *, self_sender=None, self_profile_url=None, 
         raise ValueError(
             "No supported LinkedIn AI conversation CSVs found. Use --all-csv to inspect other CSV exports."
         )
+    snapshot_dir = output / "private" / "source-csv"
+    snapshot_dir.mkdir(parents=True, mode=0o700)
+    snapshot_dir.parent.chmod(0o700)
+    snapshot_dir.chmod(0o700)
     for name, data in files:
+        source_digest = hashlib.sha256(data).hexdigest()
+        snapshot_name = _safe_id(name) + "-" + source_digest[:16] + ".csv"
+        snapshot_path = "private/source-csv/" + snapshot_name
+        snapshot_file = snapshot_dir / snapshot_name
+        with snapshot_file.open("xb") as stream:
+            stream.write(data)
+        snapshot_file.chmod(0o600)
         for session_id, document in convert_csv(
-            name, data, self_sender=self_sender, self_profile_url=self_profile_url
+            name, data, self_sender=self_sender,
+            self_profile_url=self_profile_url,
+            source_sha256=source_digest, source_snapshot=snapshot_path,
         ):
             filename = _safe_id(session_id) + ".agentson"
             if filename in seen or (output / filename).exists():
