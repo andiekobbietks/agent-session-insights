@@ -30,6 +30,7 @@ dependencies = [
 [project.scripts]
 agent-session-insights = "agent_session_insights.review:main"
 agentson-export = "agent_session_insights.agentson:main"
+linkedin-agentson = "agent_session_insights.linkedin:main"
 
 [project.urls]
 Homepage = "https://github.com/andiekobbietks/agent-session-insights"
@@ -47,6 +48,7 @@ only-include = [
   "review.py",
   "sources.py",
   "agentson.py",
+  "linkedin.py",
   "agentson-v1.2.json",
   "agentson-v1.2-entries.json",
   "AGENTSON-SCHEMA-NOTICE.md",
