@@ -154,18 +154,25 @@ def parse_agentson(path, spec, source_id, redact):
         }
         if kind in ("user", "assistant"):
             event["text"] = redact(entry["text"])
-            if entry_type == "user-feedback":
-                event["form_response"] = True
         else:
-            event["name"] = redact(entry["tool"]) if entry_type == "action" else f"AgentSON {entry_type}"
+            if entry_type == "action":
+                event["name"] = redact(entry["tool"])
+            elif entry_type == "side-effect":
+                event["name"] = "AgentSON side-effect: " + redact(entry.get("action", "unknown"))
+            else:
+                event["name"] = f"AgentSON {entry_type}"
             detail = entry.get("text") or entry.get("output") or entry.get("message")
             if detail is None and entry_type == "action":
                 detail = entry.get("code")
+            if detail is None and entry_type == "side-effect":
+                detail = entry.get("diff") or entry.get("path") or entry.get("action")
+            if detail is None and entry_type == "capabilities":
+                detail = entry.get("capabilities")
             if detail is not None:
                 event["detail"] = _redact_tree(detail, redact) if isinstance(detail, str) else json.dumps(
                     _redact_tree(detail, redact), ensure_ascii=False, sort_keys=True
                 )
-            for field in ("status", "duration_ms", "tool_call_id", "from", "to", "reason"):
+            for field in ("status", "duration_ms", "tool_call_id", "from", "to", "reason", "context", "action", "path", "diff"):
                 if field in entry:
                     event[f"agentson_{field}"] = _redact_tree(entry[field], redact)
         events.append(event)
