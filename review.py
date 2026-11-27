@@ -756,7 +756,7 @@ def main():
     )
     inventory.add_argument("--root", type=Path, help="History directory; with --repo, override the native root (requires --harness).")
     inventory.add_argument("--repo", type=Path, help="Match repository metadata in the current user's native history stores.")
-    inventory.add_argument("--harness", choices=HARNESSES, help="Filter repository discovery, or identify the format of an explicit --root.")
+    inventory.add_argument("--harness", choices=("copilot", "claude", "codex", "dsh"), help="Filter repository discovery, or identify the format of an explicit --root.")
     repository = commands.add_parser(
         "repo", help="Generate a complete report from repository sessions; launches a headless agent by default.",
         description=(
@@ -787,7 +787,7 @@ def main():
         ),
     )
     repository.add_argument("--repo", type=Path, required=True, help="Accessible local repository directory to match against native session metadata.")
-    repository.add_argument("--harness", choices=HARNESSES, help="Limit discovery to this harness; otherwise detect native logs.")
+    repository.add_argument("--harness", choices=("copilot", "claude", "codex", "dsh"), help="Limit discovery to this harness; otherwise detect native logs.")
     repository.add_argument("--root", type=Path, help="Override the native history root; requires --harness.")
     selection = repository.add_mutually_exclusive_group()
     selection.add_argument("--session", action="append", default=[], help="Select an ID or harness:ID; repeat for multiple sessions.")

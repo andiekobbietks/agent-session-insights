@@ -1,9 +1,14 @@
 # Agent Session Insights
 
+> **This repository is a fork of [Mark Russinovich's Agent Session Insights](https://github.com/markrussinovich/agent-session-insights).** It retains the original project's session collection, accounting, evidence-linked analysis, report generation and offline player. This fork adds an AgentSON v1.2 interoperability layer and an initial LinkedIn AI/Learning Coach export importer. The goal is to make Agent Session Insights a useful analysis and review application for AgentSON and other exported agent/conversation records, not to replace AgentSON as the canonical interchange format.
+
+> **Beta candidate:** this fork adds AgentSON v1.2 import and verified source-archive export. It is not the upstream PyPI release. See the beta validation workflow and open pull request before relying on it in production.
+
+
 Create offline reports from coding-agent conversations: complete messages,
 evidence-linked analysis, per-model token and cost comparisons, and a zoomable
 timeline with local day/night shading. Supports Copilot CLI, Claude Code, Codex,
-DeepSeek Harness, Cursor exports, and Replit conversation exports.
+DeepSeek Harness, Cursor exports, Replit conversation exports, and AgentSON v1.2 archives via explicit manifests.
 
 **See the example:** [HTML report](https://markrussinovich.github.io/agent-session-insights/),
 [standalone player](https://markrussinovich.github.io/agent-session-insights/player.html),
@@ -11,10 +16,103 @@ or [PDF](https://markrussinovich.github.io/agent-session-insights/report.pdf).
 
 ![Wordle session review with a timeline, per-turn token and cost estimates, and evidence-linked user decisions.](assets/wordle-review.png)
 
+## What this fork is building
+
+The upstream project is an offline session-inspection and reporting application. This fork intentionally retains that purpose and its existing workflows while adding a separate interchange boundary:
+
+- **Retained from upstream:** native session discovery and collection for Copilot CLI, Claude Code, Codex and DeepSeek Harness; explicit Cursor and Replit imports; frozen source evidence; token/accounting and pricing analysis; evidence-linked annotations; HTML/PDF reports; standalone interactive player; manifest-driven preparation and rerendering.
+- **Added in this fork:** strict AgentSON v1.2 document/JSONL reading, a privacy-aware reporting projection, private source snapshots with SHA-256 verification, and byte-preserving AgentSON source export.
+- **New source adapter:** an initial local LinkedIn AI/Learning Coach CSV importer that converts supported conversation records into AgentSON v1.2 documents.
+- **Intended direction:** a growing set of independently tested source adapters that convert exported conversation/session records into AgentSON, followed by the same Agent Session Insights review pipeline.
+
+AgentSON remains the interchange layer; Agent Session Insights remains the analysis, evidence review and presentation application. Importing a source into a report does not make the report's normalized events a lossless replacement for the original source. Where exact preservation matters, the original bytes and their hashes are retained separately.
+
+### What is implemented versus planned
+
+| Capability | Status in this fork |
+| --- | --- |
+| Original native Copilot, Claude, Codex and DeepSeek Harness workflows | Retained |
+| Original explicit Cursor and Replit export workflows | Retained |
+| AgentSON v1.2 JSON document and JSONL reader | Implemented; schema-validated |
+| Original AgentSON archive byte-preserving export | Implemented; SHA-256 checked |
+| LinkedIn AI/Learning Coach CSV-to-AgentSON command | Initial implementation; requires validation against a real member export |
+| Every LinkedIn AI/Learning export category and every possible CSV layout | **Not claimed** |
+| Universal import of every agent harness or vendor export | **Planned direction, not implemented** |
+| Lossless reconstruction of arbitrary source data from normalized report events | **Not supported** |
+
+The LinkedIn importer is deliberately separate from LinkedIn itself: it processes an archive that the account holder has downloaded. It does not log in, scrape LinkedIn, use a Premium API, or unlock categories that LinkedIn did not include in the archive. Premium status does not guarantee that every category is available.
+
+## Productivity evidence: what the reports can and cannot claim
+
+Agent Session Insights can provide part of the evidence needed to evaluate whether
+AI-assisted development improves productivity. **Session activity is not, by
+itself, a productivity measure.** Tokens, tool calls, recorded turns, elapsed
+spans, and estimated API-equivalent costs describe what the captured agent
+sessions recorded. They do not establish how much useful work a developer
+completed, whether the result was correct, or what would have happened without
+the agent.
+
+A defensible productivity evaluation needs an additional, outcome-based
+measurement layer. It should connect each scoped task to evidence beyond the
+conversation:
+
+1. **Define the task before work begins.** Record the intended outcome,
+   acceptance criteria, task type and a lightweight complexity assessment.
+   Keep the definition stable so that success is not retrospectively redefined
+   around what the agent happened to produce.
+2. **Verify the delivered outcome.** Link the task to independently checkable
+   evidence such as CI/test results, reviewed commits or pull requests,
+   acceptance checks, defect findings and user/reviewer sign-off. Distinguish
+   an agent's statement that something passed from a test result or human
+   review that actually verifies it.
+3. **Measure human effort separately.** Use an explicitly collected,
+   privacy-conscious measure of developer active time or effort. Session
+   timestamps and prompt-to-response spans are not active working time;
+   occupied timeline bins are not a substitute for time tracking.
+4. **Account for quality and rework.** Record defects, rejected output,
+   revisions, rollbacks and follow-up work. A faster first draft is not a
+   productivity gain if it creates more correction or maintenance work.
+5. **Compare like with like.** Use a predeclared baseline or a suitable
+   comparison group, repeat across representative tasks, and account for task
+   type, complexity, developer experience and project conditions. Report sample
+   size, missing data and uncertainty rather than presenting a single
+   unqualified percentage.
+6. **Show the trade-offs.** Present accepted outcomes, human effort, elapsed
+   lead time, rework/quality indicators and agent/API-equivalent cost together.
+   Do not collapse them into one score unless the weighting and rationale are
+   explicit.
+
+With those inputs, the application can become an **evidence-linked
+productivity evaluation tool**: it can join recorded agent activity and costs
+to independently verified task outcomes and a documented comparison method.
+That supports a bounded claim such as a measured change in accepted task
+throughput or human effort for a defined class of work and study period. It
+does not automatically prove that AI caused the change, and it should not
+generalise one team's result to all developers.
+
+**Implementation status:** the current reporting pipeline provides session
+accounting, source coverage, evidence-linked annotations and provenance
+snapshots. It does not yet implement the full task/outcome dataset, active-time
+collection, controlled comparison design or statistical evaluation described
+above. Those are a separate measurement layer to build and validate; they must
+not be implied by existing token, timeline or annotation reports.
+
 ## Install
 
-Use Python 3.12 or later. Install the package and its Chromium renderer in a
-virtual environment:
+Use Python 3.12 or later. The PyPI command below installs the upstream MIT Alpha
+release and does **not** include this fork's AgentSON integration. To test the
+AgentSON beta candidate, clone this fork's feature branch and install it with
+`python -m pip install -e .` instead:
+
+```powershell
+git clone --branch feat/agentson-v1.2-import-roundtrip https://github.com/andiekobbietks/agent-session-insights.git
+Set-Location agent-session-insights
+python -m pip install -e .
+python -m playwright install chromium
+```
+
+For the upstream PyPI package, use Python 3.12 or later and install it with its
+Chromium renderer in a virtual environment:
 
 **Windows PowerShell**
 
@@ -205,6 +303,124 @@ agent-session-insights run --manifest .\agent-session-reports\my-project\manifes
 Keep the original directory intact: the manifest references files saved beside
 it. This avoids rereading changing live logs or repeating model interpretation.
 
+### AgentSON v1.2 interchange
+
+Agent Session Insights can consume an AgentSON v1.2 archive as an explicitly
+selected source. This is an adapter, not a replacement for the AgentSON
+canonical format.
+
+The reader accepts either:
+- A v1.2 JSON document with an `entries` array and the canonical
+  `https://agentson.dev/schema/v1.2.json` schema identifier.
+- A v1.2 JSONL stream whose first record is `stream-meta`.
+
+The reader validates inputs against the vendored AgentSON v1.2 JSON Schemas.
+Legacy v1/v1.1 documents are rejected with a migration message rather than
+silently interpreted as v1.2.
+
+For this fork, install the integration from the checkout (the upstream PyPI
+release does not contain this fork-only change until it is released):
+
+```powershell
+python -m pip install -e .
+```
+
+Create a manifest beside your archive:
+
+```json
+{
+  "title": "AgentSON session review",
+  "timezone": "Europe/London",
+  "sources": [
+    {
+      "harness": "agentson",
+      "path": "session.agentson",
+      "session": "YOUR_STREAM_ID"
+    }
+  ]
+}
+```
+
+Generate the report without launching a model:
+
+```powershell
+agent-session-insights run --manifest .\\agentson-review.json --output .\\agentson-review
+```
+
+The report projection maps user queries and feedback to user messages,
+answers to assistant messages, and actions/observations/handoffs/state events
+to tool evidence. Private `thought` entries are retained in the private
+byte-for-byte source snapshot but excluded from report events. Session-level
+token/cost summaries are not fabricated into per-request usage.
+
+**Lossless archive round-trip:** normalized report events are not a reversible
+serialization of AgentSON. The original archive is frozen, SHA-256 verified,
+and can be exported byte-for-byte:
+
+```powershell
+agentson-export --review-dir .\\agentson-review --source S01 --output .\\roundtrip.agentson
+```
+
+The exporter refuses modified snapshots and existing destination files. The
+round-trip test asserts exact byte equality and hash verification. This
+preserves every original entry, extension field, correlation, provenance
+object, and payload even where the reporting projection intentionally omits
+data. Review private snapshots before sharing; they may contain sensitive
+conversation content or credentials.
+
+### LinkedIn AI/Learning Coach export to AgentSON
+
+The `linkedin-agentson` command is an **initial importer**, not a claim of complete LinkedIn-export compatibility. It accepts a member-downloaded ZIP archive, an extracted directory, or an individual CSV. It looks for known AI/Learning Coach filename patterns, including:
+
+- `guide_messages.csv`
+- `learning_coach_messages.csv`
+- `LearningCoachMessages.csv`
+- `learning_role_play_messages.csv`
+
+The parser recognises common message, sender, conversation-ID, timestamp, question, answer and feedback column aliases. LinkedIn may change filenames, headers, encodings or export structure; the actual archive must be inspected before claiming compatibility with a particular category. Use `--all-csv` to inspect additional CSVs, but unrelated files will be rejected if they do not contain recognised conversation fields.
+
+Install the fork from its feature branch as described under [Install](#install), then run:
+
+```powershell
+linkedin-agentson --input .\\Complete_LinkedInDataExport.zip --output .\\linkedin-agentson
+```
+
+If the export uses a custom member label, provide it explicitly:
+
+```powershell
+linkedin-agentson --input .\\Complete_LinkedInDataExport.zip --output .\\linkedin-agentson --self-sender "Your exact sender label"
+```
+
+Alternatively, use `--self-profile-url` when the CSV contains sender profile URLs. If the importer cannot safely distinguish the member from the AI, it must stop rather than silently assign the wrong speaker. Timestamps with an explicit timezone or supported Unix-time values are retained; timezone-naive date strings are rejected rather than assigned an invented timezone.
+
+Each converted conversation becomes a schema-validated AgentSON v1.2 JSON document. Selected source CSVs are also copied byte-for-byte into `private/source-csv`; the AgentSON document records the source path and SHA-256 digest. Keep this output private: it contains personal conversation text. The adapter does not fabricate model usage, tool calls, agent lifecycle events or events absent from the export. Roleplay feedback is represented as observation evidence.
+
+To inspect the resulting conversations with Agent Session Insights, create a manifest that points to one generated `.agentson` file. Replace the example path and session ID with the actual generated filename and ID:
+
+```json
+{
+  "title": "LinkedIn AI conversation review",
+  "timezone": "Europe/London",
+  "sources": [
+    {
+      "harness": "agentson",
+      "path": "linkedin-agentson/REPLACE_WITH_GENERATED_FILE.agentson",
+      "session": "REPLACE_WITH_GENERATED_SESSION_ID"
+    }
+  ]
+}
+```
+
+Then run:
+
+```powershell
+agent-session-insights run --manifest .\\linkedin-review.json --output .\\linkedin-review
+```
+
+This produces the normal evidence-linked HTML/PDF/player review. It is a reporting projection; the original LinkedIn CSV is retained separately for provenance. Before treating the importer as production-ready, validate it against real exports from the relevant LinkedIn categories and add fixtures for their exact schemas.
+
+LinkedIn's own [data-download instructions](https://www.linkedin.com/help/linkedin/answer/a1339364) explain which categories are available and how to request them. Categories depend on the account and its activity; this project cannot make unavailable categories appear.
+
 ### Explicit exports and manifests
 
 Create a JSON manifest for selected history files, including Cursor/Replit
@@ -279,4 +495,9 @@ and open them locally; GitHub's file viewer does not run the player.
 See the [maintainer guide](https://github.com/markrussinovich/agent-session-insights/blob/main/MAINTAINING.md)
 for checkout setup, tests, example provenance, GitHub Pages deployment, and PyPI
 releases. [DESIGN.md](DESIGN.md) contains collection, accounting, privacy, and
-player contracts. The project is [MIT licensed](LICENSE).
+player contracts. The application and this fork's original code are [MIT licensed](LICENSE).
+The vendored AgentSON v1.2 JSON Schemas are separately distributed under
+[Apache License 2.0](AGENTSON-SCHEMA-LICENSE.txt), with attribution in
+[AGENTSON-SCHEMA-NOTICE.md](AGENTSON-SCHEMA-NOTICE.md). Package metadata records
+both component licences as `MIT AND Apache-2.0`; this does not relicense the
+application as Apache 2.0. See the [changelog](CHANGELOG.md) and [security policy](SECURITY.md).

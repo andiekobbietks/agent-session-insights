@@ -100,6 +100,31 @@ Configure Pages to use **GitHub Actions**. Changes to example inputs, rendering
 code, or the workflow on `main` redeploy the reviewed demo. Manual workflow
 dispatch is also available.
 
+## Beta acceptance gate
+
+A beta candidate is not a production-support promise. Before tagging or
+publishing a beta, require all of the following on the exact release commit:
+
+- Full unit/integration suite passes on Python 3.12 and 3.13.
+- Wheel and source distribution build; strict Twine metadata checks pass.
+- Distribution audit confirms runtime schemas, both licence texts, and notices
+  are present, while local histories and private snapshots are absent.
+- Installed-wheel smoke tests pass outside the checkout on Linux, Windows,
+  and macOS.
+- AgentSON JSONL and JSON document imports validate against the vendored v1.2
+  schemas; unknown and legacy versions fail closed.
+- End-to-end collection/export is byte-identical; tampering, path traversal,
+  symlink escape, and overwrite attempts are rejected.
+- Report projection tests prove private thought entries do not enter published
+  report events and sensitive metadata is redacted.
+- README and release notes state the exact fidelity boundary: normalized
+  report events are not reversible; the verified original archive is the
+  lossless export source.
+
+The fork's CI runs the full test suite and package checks. The release workflow
+also tests the built wheel across operating systems and Python versions. A
+green focused AgentSON test job alone is not sufficient to declare Beta.
+
 ## Publishing releases
 
 The package name and version are defined in [pyproject.toml](pyproject.toml).

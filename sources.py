@@ -3,8 +3,14 @@ import json
 import re
 from datetime import datetime, timezone
 
+if __package__:
+    from .agentson import parse_agentson
+else:
+    from agentson import parse_agentson
+
 HARNESSES = {"copilot": "GitHub Copilot", "claude": "Claude Code", "codex": "Codex",
-             "dsh": "DeepSeek Harness", "cursor": "Cursor", "replit": "Replit"}
+             "dsh": "DeepSeek Harness", "cursor": "Cursor", "replit": "Replit",
+             "agentson": "AgentSON v1.2"}
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 SECRET = re.compile(
     r"(?:sk-or-v1-|github_pat_|ghp_|gho_|hf_|sk-)[A-Za-z0-9_-]{15,}"
@@ -142,6 +148,8 @@ def compressed_jsonl(path):
 def parse(path, spec, source_id):
     """Return canonical records, diagnostics, and raw record count before scoping."""
     harness, session = spec["harness"], spec["session"]
+    if harness == "agentson":
+        return parse_agentson(path, spec, source_id, redact)
     events, warnings = [], []
     seen = {}
 

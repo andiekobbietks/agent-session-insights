@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: python-package-${{ github.event_name == 'pull_request' && github.run_id || 'publication' }}
-  cancel-in-progress: false
+  group: python-package-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   version:
@@ -107,6 +107,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -114,7 +115,7 @@ jobs:
           ref: ${{ needs.build.outputs.sha }}
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - uses: actions/download-artifact@v4
         with:
           name: python-distributions
@@ -150,20 +151,43 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
   release:
-    if: ${{ !cancelled() && needs.publish.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    needs: [build, publish]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.test.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && (github.repository != 'markrussinovich/agent-session-insights' || needs.publish.result == 'success') }}
+    needs: [build, test, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+      - name: Extract release notes from the changelog
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          version = os.environ["VERSION"]
+          lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+          heading = f"## {version} - Beta candidate"
+          try:
+              start = lines.index(heading)
+          except ValueError:
+              raise SystemExit(f"Missing changelog section: {heading}")
+          end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+          notes = "\n".join(lines[start:end]).strip() + "\n"
+          Path(os.environ["NOTES_FILE"]).write_text(notes, encoding="utf-8")
+          PY
       - name: Create the matching GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.build.outputs.version }}
           RELEASE_SHA: ${{ needs.build.outputs.sha }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
         run: |
-          gh release create "v$VERSION" --target "$RELEASE_SHA" --title "v$VERSION" --generate-notes
+          gh release create "v$VERSION" --target "$RELEASE_SHA" --title "v$VERSION" --notes-file "$NOTES_FILE"
 
   publish-testpypi:
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.test.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.publish_testpypi && github.repository == 'markrussinovich/agent-session-insights' }}
