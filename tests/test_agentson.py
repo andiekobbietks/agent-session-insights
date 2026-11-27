@@ -152,6 +152,64 @@ class AgentSONReaderTests(unittest.TestCase):
         self.assertEqual(collection["sources"][0]["counts"]["user"], 2)
         self.assertEqual(collection["sources"][0]["counts"]["assistant"], 1)
 
+    def test_credentials_are_redacted_from_report_but_original_is_exportable(self):
+        values = records()
+        values[1]["text"] = "Use this credential: Bearer abcdefghijklmnopqrstuvwxyz123456"
+        values[3]["args"] = {"note": "api_key=abcdefghijklmnop123456"}
+        values[3]["provenance"] = {"url": "https://chatgpt.com/share/private-session-token"}
+        original = self.write_stream(values)
+        events, _warnings, _count = parse(
+            original, {"harness": "agentson", "session": "agentson-test-001"}, "S01"
+        )
+        projection = json.dumps(events)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz123456", projection)
+        self.assertNotIn("abcdefghijklmnop123456", projection)
+        self.assertNotIn("private-session-token", projection)
+        self.assertIn("[REDACTED_CREDENTIAL]", projection)
+        self.assertIn("[REDACTED_SHARED_SESSION_URL]", projection)
+
+        review = self.root / "review"
+        snapshot = review / "private" / "sources" / "S01.agentson"
+        snapshot.parent.mkdir(parents=True)
+        snapshot.write_bytes(original.read_bytes())
+        digest = hashlib.sha256(original.read_bytes()).hexdigest()
+        (review / "collection.json").write_text(json.dumps({
+            "sources": [{"id": "S01", "harness": "agentson",
+                         "snapshot": "private/sources/S01.agentson", "sha256": digest}]
+        }), encoding="utf-8")
+        exported = self.root / "private-original.agentson"
+        export_source_snapshot(review, "S01", exported)
+        self.assertEqual(exported.read_bytes(), original.read_bytes())
+
+    def test_export_rejects_path_traversal_in_collection_metadata(self):
+        review = self.root / "review"
+        review.mkdir()
+        (review / "collection.json").write_text(json.dumps({
+            "sources": [{"id": "S01", "harness": "agentson",
+                         "snapshot": "../outside.agentson", "sha256": "irrelevant"}]
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Unsafe snapshot path"):
+            export_source_snapshot(review, "S01", self.root / "escaped.agentson")
+
+    def test_export_rejects_symlinked_source_snapshot(self):
+        review = self.root / "review"
+        source_dir = review / "private" / "sources"
+        source_dir.mkdir(parents=True)
+        outside = self.root / "outside.agentson"
+        outside.write_text("{}\\n", encoding="utf-8")
+        link = source_dir / "S01.agentson"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("Symlink creation is not available in this environment.")
+        (review / "collection.json").write_text(json.dumps({
+            "sources": [{"id": "S01", "harness": "agentson",
+                         "snapshot": "private/sources/S01.agentson",
+                         "sha256": hashlib.sha256(outside.read_bytes()).hexdigest()}]
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "symbolic link"):
+            export_source_snapshot(review, "S01", self.root / "escaped.agentson")
+
     def test_export_refuses_tampered_snapshot(self):
         review = self.root / "review"
         snapshot = review / "private" / "sources" / "S01.agentson"
