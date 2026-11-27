@@ -3,7 +3,7 @@
 Create offline reports from coding-agent conversations: complete messages,
 evidence-linked analysis, per-model token and cost comparisons, and a zoomable
 timeline with local day/night shading. Supports Copilot CLI, Claude Code, Codex,
-DeepSeek Harness, Cursor exports, and Replit conversation exports.
+DeepSeek Harness, Cursor exports, Replit conversation exports, and AgentSON v1.2 archives via explicit manifests.
 
 **See the example:** [HTML report](https://markrussinovich.github.io/agent-session-insights/),
 [standalone player](https://markrussinovich.github.io/agent-session-insights/player.html),
