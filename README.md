@@ -1,5 +1,7 @@
 # Agent Session Insights
 
+> **This repository is a fork of [Mark Russinovich's Agent Session Insights](https://github.com/markrussinovich/agent-session-insights).** It retains the original project's session collection, accounting, evidence-linked analysis, report generation and offline player. This fork adds an AgentSON v1.2 interoperability layer and an initial LinkedIn AI/Learning Coach export importer. The goal is to make Agent Session Insights a useful analysis and review application for AgentSON and other exported agent/conversation records, not to replace AgentSON as the canonical interchange format.
+
 > **Beta candidate:** this fork adds AgentSON v1.2 import and verified source-archive export. It is not the upstream PyPI release. See the beta validation workflow and open pull request before relying on it in production.
 
 
@@ -13,6 +15,32 @@ DeepSeek Harness, Cursor exports, Replit conversation exports, and AgentSON v1.2
 or [PDF](https://markrussinovich.github.io/agent-session-insights/report.pdf).
 
 ![Wordle session review with a timeline, per-turn token and cost estimates, and evidence-linked user decisions.](assets/wordle-review.png)
+
+## What this fork is building
+
+The upstream project is an offline session-inspection and reporting application. This fork intentionally retains that purpose and its existing workflows while adding a separate interchange boundary:
+
+- **Retained from upstream:** native session discovery and collection for Copilot CLI, Claude Code, Codex and DeepSeek Harness; explicit Cursor and Replit imports; frozen source evidence; token/accounting and pricing analysis; evidence-linked annotations; HTML/PDF reports; standalone interactive player; manifest-driven preparation and rerendering.
+- **Added in this fork:** strict AgentSON v1.2 document/JSONL reading, a privacy-aware reporting projection, private source snapshots with SHA-256 verification, and byte-preserving AgentSON source export.
+- **New source adapter:** an initial local LinkedIn AI/Learning Coach CSV importer that converts supported conversation records into AgentSON v1.2 documents.
+- **Intended direction:** a growing set of independently tested source adapters that convert exported conversation/session records into AgentSON, followed by the same Agent Session Insights review pipeline.
+
+AgentSON remains the interchange layer; Agent Session Insights remains the analysis, evidence review and presentation application. Importing a source into a report does not make the report's normalized events a lossless replacement for the original source. Where exact preservation matters, the original bytes and their hashes are retained separately.
+
+### What is implemented versus planned
+
+| Capability | Status in this fork |
+| --- | --- |
+| Original native Copilot, Claude, Codex and DeepSeek Harness workflows | Retained |
+| Original explicit Cursor and Replit export workflows | Retained |
+| AgentSON v1.2 JSON document and JSONL reader | Implemented; schema-validated |
+| Original AgentSON archive byte-preserving export | Implemented; SHA-256 checked |
+| LinkedIn AI/Learning Coach CSV-to-AgentSON command | Initial implementation; requires validation against a real member export |
+| Every LinkedIn AI/Learning export category and every possible CSV layout | **Not claimed** |
+| Universal import of every agent harness or vendor export | **Planned direction, not implemented** |
+| Lossless reconstruction of arbitrary source data from normalized report events | **Not supported** |
+
+The LinkedIn importer is deliberately separate from LinkedIn itself: it processes an archive that the account holder has downloaded. It does not log in, scrape LinkedIn, use a Premium API, or unlock categories that LinkedIn did not include in the archive. Premium status does not guarantee that every category is available.
 
 ## Install
 
@@ -285,38 +313,34 @@ object, and payload even where the reporting projection intentionally omits
 data. Review private snapshots before sharing; they may contain sensitive
 conversation content or credentials.
 
-### LinkedIn AI conversation exports to AgentSON
+### LinkedIn AI/Learning Coach export to AgentSON
 
-This fork includes a local converter for LinkedIn member data archives. It reads
-CSV files from a ZIP archive, an extracted archive directory, or an individual
-CSV and writes one schema-validated AgentSON v1.2 `.agentson` document per
-conversation. It does not sign in to LinkedIn, scrape the website, or bypass
-account entitlements.
+The `linkedin-agentson` command is an **initial importer**, not a claim of complete LinkedIn-export compatibility. It accepts a member-downloaded ZIP archive, an extracted directory, or an individual CSV. It looks for known AI/Learning Coach filename patterns, including:
 
-Known Learning/AI export filename patterns include `guide_messages.csv`,
-`learning_coach_messages.csv`, `LearningCoachMessages.csv`, and
-`learning_role_play_messages.csv`. The converter checks message, sender,
-conversation, timestamp, question/answer, and feedback columns. It refuses to
-guess who wrote a message when the sender cannot be safely classified. Supply
-`--self-sender` or `--self-profile-url` if the archive uses a sender label or
-profile URL that is not self-identifying. Timestamps without a timezone are
-rejected rather than silently assigned one.
+- `guide_messages.csv`
+- `learning_coach_messages.csv`
+- `LearningCoachMessages.csv`
+- `learning_role_play_messages.csv`
+
+The parser recognises common message, sender, conversation-ID, timestamp, question, answer and feedback column aliases. LinkedIn may change filenames, headers, encodings or export structure; the actual archive must be inspected before claiming compatibility with a particular category. Use `--all-csv` to inspect additional CSVs, but unrelated files will be rejected if they do not contain recognised conversation fields.
+
+Install the fork from its feature branch as described under [Install](#install), then run:
 
 ```powershell
-linkedin-agentson --input .\Complete_LinkedInDataExport.zip --output .\linkedin-agentson
+linkedin-agentson --input .\\Complete_LinkedInDataExport.zip --output .\\linkedin-agentson
 ```
 
-If you have already extracted the archive, pass the folder instead. To inspect
-other CSVs in the archive, add `--all-csv`. Review the resulting files before
-sharing them: LinkedIn exports can contain personal data and conversation text.
-The selected source CSV files are copied byte-for-byte into a private, permission-restricted `private/source-csv` folder and their SHA-256 digests are recorded in each AgentSON document. Roleplay feedback is represented as observation evidence, not invented tool execution.
-Only events present in the export are converted; this adapter does not fabricate
-tool calls, model usage, or agent lifecycle events.
+If the export uses a custom member label, provide it explicitly:
 
+```powershell
+linkedin-agentson --input .\\Complete_LinkedInDataExport.zip --output .\\linkedin-agentson --self-sender "Your exact sender label"
+```
 
-To review the converted conversation in the fork's offline report, create a
-manifest that points to one generated file. Use its filename (without
-`.agentson`) as the `session` value:
+Alternatively, use `--self-profile-url` when the CSV contains sender profile URLs. If the importer cannot safely distinguish the member from the AI, it must stop rather than silently assign the wrong speaker. Timestamps with an explicit timezone or supported Unix-time values are retained; timezone-naive date strings are rejected rather than assigned an invented timezone.
+
+Each converted conversation becomes a schema-validated AgentSON v1.2 JSON document. Selected source CSVs are also copied byte-for-byte into `private/source-csv`; the AgentSON document records the source path and SHA-256 digest. Keep this output private: it contains personal conversation text. The adapter does not fabricate model usage, tool calls, agent lifecycle events or events absent from the export. Roleplay feedback is represented as observation evidence.
+
+To inspect the resulting conversations with Agent Session Insights, create a manifest that points to one generated `.agentson` file. Replace the example path and session ID with the actual generated filename and ID:
 
 ```json
 {
@@ -325,8 +349,8 @@ manifest that points to one generated file. Use its filename (without
   "sources": [
     {
       "harness": "agentson",
-      "path": "linkedin-agentson/linkedin-guide_messages-conv-1.agentson",
-      "session": "linkedin-guide_messages-conv-1"
+      "path": "linkedin-agentson/REPLACE_WITH_GENERATED_FILE.agentson",
+      "session": "REPLACE_WITH_GENERATED_SESSION_ID"
     }
   ]
 }
@@ -335,18 +359,12 @@ manifest that points to one generated file. Use its filename (without
 Then run:
 
 ```powershell
-agent-session-insights run --manifest .\linkedin-review.json --output .\linkedin-review
+agent-session-insights run --manifest .\\linkedin-review.json --output .\\linkedin-review
 ```
 
-That produces the normal evidence-linked HTML/PDF/player review from the
-AgentSON stream. The converter's filename and session ID depend on the
-conversation ID in your actual export.
+This produces the normal evidence-linked HTML/PDF/player review. It is a reporting projection; the original LinkedIn CSV is retained separately for provenance. Before treating the importer as production-ready, validate it against real exports from the relevant LinkedIn categories and add fixtures for their exact schemas.
 
-The LinkedIn archive must be requested and downloaded by the account holder.
-LinkedIn only includes data categories applicable to that account and activity;
-the presence of a Premium trial does not guarantee every AI/Learning export
-category is available. See [LinkedIn's data-download guidance](https://www.linkedin.com/help/linkedin/answer/a1339364)
-and request only the categories you need.
+LinkedIn's own [data-download instructions](https://www.linkedin.com/help/linkedin/answer/a1339364) explain which categories are available and how to request them. Categories depend on the account and its activity; this project cannot make unavailable categories appear.
 
 ### Explicit exports and manifests
 
