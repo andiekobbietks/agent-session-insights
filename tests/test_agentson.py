@@ -63,7 +63,10 @@ class AgentSONReaderTests(unittest.TestCase):
         self.assertEqual(events[1]["agentson_tool_call_id"], "call-1")
         self.assertEqual(events[2]["agentson_correlation_id"], "call-1")
         self.assertEqual(events[3]["kind"], "assistant")
-        self.assertTrue(events[8]["form_response"])
+        self.assertEqual(events[8]["agentson_entry_type"], "user-feedback")
+        self.assertNotIn("form_response", events[8])
+        self.assertEqual(events[7]["agentson_action"], "file_write")
+        self.assertIn("Review code", events[6]["detail"])
         self.assertNotIn("private reasoning", json.dumps(events))
         self.assertTrue(any("thought entry was" in warning for warning in warnings))
 
