@@ -24,10 +24,12 @@ dependencies = [
   "playwright==1.64.1",
   "tzdata>=2024.1; sys_platform == 'win32'",
   "zstandard>=0.23",
+  "jsonschema>=4.23",
 ]
 
 [project.scripts]
 agent-session-insights = "agent_session_insights.review:main"
+agentson-export = "agent_session_insights.agentson:main"
 
 [project.urls]
 Homepage = "https://github.com/markrussinovich/agent-session-insights"
@@ -44,6 +46,9 @@ only-include = [
   "render.py",
   "review.py",
   "sources.py",
+  "agentson.py",
+  "agentson-v1.2.json",
+  "agentson-v1.2-entries.json",
   "assets/player.css",
   "assets/player.html",
   "assets/player.js",
