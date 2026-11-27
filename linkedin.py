@@ -196,7 +196,7 @@ def convert_csv(name, data, *, self_sender=None, self_profile_url=None):
                     })
             if feedback_col and str(row.get(feedback_col) or "").strip():
                 entries.append({
-                    "type": "user-feedback", "agent": "linkedin-ai",
+                    "type": "observation", "source": "other", "agent": "linkedin-ai",
                     "text": str(row[feedback_col]).strip(),
                     "provenance": {"source": "export", "confidence": "confirmed"},
                     "source_file": name, "source_row": row_number, **common,
