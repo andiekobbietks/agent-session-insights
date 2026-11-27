@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: python-package-${{ github.event_name == 'pull_request' && github.run_id || 'publication' }}
-  cancel-in-progress: false
+  group: python-package-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   version:
