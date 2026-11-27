@@ -210,7 +210,15 @@ def convert_csv(name, data, *, self_sender=None, self_profile_url=None, source_s
             "tool": {"name": "other", "session_id": session_id},
             "agent": {"name": "LinkedIn AI", "provider": "LinkedIn"},
             "task": f"Imported LinkedIn conversation from {Path(name).name}",
-            "context": {"platform": "LinkedIn", "url": "https://www.linkedin.com",\n                        "source_archive": {"path": source_snapshot, "sha256": source_sha256,\n                                           "media_type": "text/csv"} if source_sha256 else {}},
+            "context": {
+                "platform": "LinkedIn",
+                "url": "https://www.linkedin.com",
+                "source_archive": {
+                    "path": source_snapshot,
+                    "sha256": source_sha256,
+                    "media_type": "text/csv",
+                } if source_sha256 and source_snapshot else {},
+            },
             "entries": entries,
         }
         validator_path = Path(__file__).resolve().parent / "agentson-v1.2.json"
