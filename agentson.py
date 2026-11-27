@@ -30,7 +30,7 @@ def _validator(path):
 
 
 def _validate(value, validator, label):
-    errors = sorted(validator.iter_errors(value), key=lambda e: list(e.path))
+    errors = sorted(validator.iter_errors(value), key=lambda e: tuple(str(part) for part in e.path))
     if errors:
         error = errors[0]
         location = ".".join(str(part) for part in error.absolute_path) or "$"
@@ -62,6 +62,8 @@ def _load(path):
         return "jsonl", records
     if isinstance(value, dict) and isinstance(value.get("entries"), list):
         return "document", value
+    if isinstance(value, dict) and value.get("type"):
+        return "jsonl", [(1, value)]
     raise ValueError(f"{path.name}: expected a v1.2 JSON document or JSONL stream beginning with stream-meta.")
 
 
@@ -137,7 +139,6 @@ def parse_agentson(path, spec, source_id, redact):
             "agentson_provenance": entry.get("provenance"),
             "agentson_session_metadata": {
                 "model": agent_meta.get("name"), "provider": agent_meta.get("provider"),
-                "context": source_meta,
             },
         }
         if kind in ("user", "assistant"):
@@ -191,8 +192,11 @@ def export_source_snapshot(review_dir, source_id, destination):
     relative = Path(source["snapshot"])
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError("Unsafe snapshot path in collection metadata.")
-    snapshot = (review_dir / relative).resolve()
-    if review_dir not in snapshot.parents or not snapshot.is_file() or snapshot.is_symlink():
+    candidate = review_dir / relative
+    if any(parent.is_symlink() for parent in (candidate, *candidate.parents) if parent != review_dir.parent):
+        raise ValueError("AgentSON snapshot path contains a symbolic link.")
+    snapshot = candidate.resolve()
+    if review_dir not in snapshot.parents or not snapshot.is_file():
         raise ValueError("AgentSON snapshot is missing, unsafe, or outside the review directory.")
     data = snapshot.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
