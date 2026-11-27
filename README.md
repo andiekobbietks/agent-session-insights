@@ -313,6 +313,35 @@ Roleplay feedback is represented as feedback, not invented tool execution.
 Only events present in the export are converted; this adapter does not fabricate
 tool calls, model usage, or agent lifecycle events.
 
+
+To review the converted conversation in the fork's offline report, create a
+manifest that points to one generated file. Use its filename (without
+`.agentson`) as the `session` value:
+
+```json
+{
+  "title": "LinkedIn AI conversation review",
+  "timezone": "Europe/London",
+  "sources": [
+    {
+      "harness": "agentson",
+      "path": "linkedin-agentson/linkedin-guide_messages-conv-1.agentson",
+      "session": "linkedin-guide_messages-conv-1"
+    }
+  ]
+}
+```
+
+Then run:
+
+```powershell
+agent-session-insights run --manifest .\linkedin-review.json --output .\linkedin-review
+```
+
+That produces the normal evidence-linked HTML/PDF/player review from the
+AgentSON stream. The converter's filename and session ID depend on the
+conversation ID in your actual export.
+
 The LinkedIn archive must be requested and downloaded by the account holder.
 LinkedIn only includes data categories applicable to that account and activity;
 the presence of a Premium trial does not guarantee every AI/Learning export
