@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-session-insights"
-version = "0.1.15"
+version = "0.2.0b1"
 description = "Evidence-linked reports and offline players for coding-agent sessions."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,7 +12,7 @@ license = "MIT"
 license-files = ["LICENSE", "AGENTSON-SCHEMA-LICENSE.txt"]
 authors = [{name = "Agent Session Insights contributors"}]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
@@ -32,9 +32,9 @@ agent-session-insights = "agent_session_insights.review:main"
 agentson-export = "agent_session_insights.agentson:main"
 
 [project.urls]
-Homepage = "https://github.com/markrussinovich/agent-session-insights"
-Documentation = "https://github.com/markrussinovich/agent-session-insights#readme"
-Issues = "https://github.com/markrussinovich/agent-session-insights/issues"
+Homepage = "https://github.com/andiekobbietks/agent-session-insights"
+Documentation = "https://github.com/andiekobbietks/agent-session-insights#readme"
+Issues = "https://github.com/andiekobbietks/agent-session-insights/issues"
 
 [tool.hatch.build.targets.wheel]
 only-include = [
