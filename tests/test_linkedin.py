@@ -56,7 +56,7 @@ class LinkedInAgentSONTests(unittest.TestCase):
             result = convert_archive(archive, output)
             self.assertEqual(len(result), 2)
             self.assertTrue(all(Path(item["file"]).suffix == ".agentson" for item in result))
-            self.assertEqual(len(list(output.glob("*.agentson"))), 2)
+            self.assertEqual(len(list(output.glob("*.agentson"))), 2)\n            snapshots = list((output / "private" / "source-csv").glob("*.csv"))\n            self.assertEqual(len(snapshots), 1)\n            self.assertIn("sha256", json.loads((output / (result[0]["session_id"] + ".agentson")).read_text())["context"]["source_archive"])
 
     def test_rejects_timezone_naive_timestamps(self):
         with self.assertRaisesRegex(ValueError, "has no timezone"):
